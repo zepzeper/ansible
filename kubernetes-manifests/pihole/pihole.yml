@@ -1,0 +1,96 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pihole
+  namespace: pihole
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: pihole
+  template:
+    metadata:
+      labels:
+        app: pihole
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: pihole
+          image: pihole/pihole:2025.11.1
+          env:
+            - name: TZ
+              value: Europe/Amsterdam
+            - name: FTLCONF_webserver_port
+              value: "8080"
+            - name: FTLCONF_webserver_api_password
+              value: changeme
+          ports:
+            - containerPort: 53
+              protocol: TCP
+            - containerPort: 53
+              protocol: UDP
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: etc
+              mountPath: /etc/pihole
+            - name: dnsmasq
+              mountPath: /etc/dnsmasq.d
+      volumes:
+        - name: etc
+          hostPath:
+            path: /var/lib/pihole/etc
+        - name: dnsmasq
+          hostPath:
+            path: /var/lib/pihole/dnsmasq
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pihole
+  namespace: pihole
+spec:
+  selector:
+    app: pihole
+  ports:
+    - name: dns-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP
+    - name: dns-udp
+      port: 53
+      targetPort: 53
+      protocol: UDP
+    - name: web
+      port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pihole
+  namespace: pihole
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    external-dns.alpha.kubernetes.io/hostname: pihole.krugten.org
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pihole.krugten.org
+      secretName: pihole-tls
+  rules:
+    - host: pihole.krugten.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pihole
+                port:
+                  number: 80

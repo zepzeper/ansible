@@ -1,0 +1,7 @@
+---
+- name: Deploy K3s manifests
+  hosts: k3s_master
+  become: yes
+  gather_facts: yes
+  roles:
+    - k3s-manifests

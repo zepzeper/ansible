@@ -1,0 +1,68 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: factorio-data
+  namespace: factorio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 4Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: factorio
+  namespace: factorio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: factorio
+  template:
+    metadata:
+      labels:
+        app: factorio
+    spec:
+      containers:
+        - name: factorio
+          image: factoriotools/factorio:2.0.76
+          ports:
+            - containerPort: 34197
+              protocol: UDP
+            - containerPort: 27015
+              protocol: TCP
+          env:
+            - name: GENERATE_NEW_SAVE
+              value: "true"
+            - name: SAVE_NAME
+              value: factorio
+          volumeMounts:
+            - name: data
+              mountPath: /factorio
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: factorio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: factorio
+  namespace: factorio
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: factorio.krugten.org
+spec:
+  type: LoadBalancer
+  selector:
+    app: factorio
+  ports:
+    - name: game
+      port: 34197
+      targetPort: 34197
+      protocol: UDP

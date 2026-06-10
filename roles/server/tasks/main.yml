@@ -1,0 +1,79 @@
+---
+- name: Install server monitoring packages
+  apt:
+    name: "{{ server_packages }}"
+    state: present
+
+- name: Harden SSH - disable password auth
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PasswordAuthentication"
+    line: "PasswordAuthentication no"
+    state: present
+  notify: restart sshd
+
+- name: Harden SSH - enable pubkey auth
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PubkeyAuthentication"
+    line: "PubkeyAuthentication yes"
+    state: present
+  notify: restart sshd
+
+- name: Harden SSH - disable challenge-response
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?ChallengeResponseAuthentication"
+    line: "ChallengeResponseAuthentication no"
+    state: present
+  notify: restart sshd
+
+- name: Install iptables and persistency tools
+  apt:
+    name:
+      - iptables
+      - iptables-persistent
+    state: present
+
+- name: Ensure iptables directory exists
+  file:
+    path: /etc/iptables
+    state: directory
+    mode: "0755"
+
+- name: Deploy base IPv4 rules
+  template:
+    src: iptables-rules.v4.j2
+    dest: /etc/iptables/rules.v4
+    mode: "0644"
+  notify: restore iptables
+
+- name: Deploy base IPv6 rules
+  template:
+    src: iptables-rules.v6.j2
+    dest: /etc/iptables/rules.v6
+    mode: "0644"
+  notify: restore iptables
+
+- name: Enable netfilter-persistent service
+  systemd:
+    name: netfilter-persistent
+    enabled: yes
+
+- name: Apply iptables rules on first run
+  command: iptables-restore < /etc/iptables/rules.v4
+  args:
+    creates: /etc/iptables/rules.v4
+
+- name: Disable unwanted services
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+    masked: yes
+  ignore_errors: yes
+  loop:
+    - bluetooth
+    - pipewire
+    - pipewire-pulse
+    - wireplumber

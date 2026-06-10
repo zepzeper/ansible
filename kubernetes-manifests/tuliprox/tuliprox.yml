@@ -1,0 +1,119 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tuliprox-data
+  namespace: tuliprox
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tuliprox-backup
+  namespace: tuliprox
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tuliprox
+  namespace: tuliprox
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tuliprox
+  template:
+    metadata:
+      labels:
+        app: tuliprox
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: ds10u
+      containers:
+        - name: tuliprox
+          image: ghcr.io/euzu/tuliprox:3.2.0
+          command:
+            - /app/tuliprox
+          args:
+            - -s
+            - -p
+            - /app/config
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+            - name: secrets
+              mountPath: /run/secrets/rendered
+            - name: data
+              mountPath: /app/data
+            - name: backup
+              mountPath: /app/backup
+      volumes:
+        - name: config
+          hostPath:
+            path: /var/lib/tuliprox/config
+        - name: secrets
+          hostPath:
+            path: /run/secrets/rendered
+        - name: data
+          persistentVolumeClaim:
+            claimName: tuliprox-data
+        - name: backup
+          persistentVolumeClaim:
+            claimName: tuliprox-backup
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tuliprox
+  namespace: tuliprox
+spec:
+  selector:
+    app: tuliprox
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tuliprox
+  namespace: tuliprox
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    external-dns.alpha.kubernetes.io/hostname: iptv.krugten.org
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - iptv.krugten.org
+      secretName: tuliprox-tls
+  rules:
+    - host: iptv.krugten.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tuliprox
+                port:
+                  number: 8080

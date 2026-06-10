@@ -1,0 +1,74 @@
+---
+- name: Set hostname
+  hostname:
+    name: "{{ server_hostname }}"
+
+- name: Update /etc/hosts
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1 {{ server_hostname }}"
+    state: present
+
+- name: Set timezone to Europe/Amsterdam
+  timezone:
+    name: "{{ timezone }}"
+
+- name: Generate en_US.UTF-8 locale
+  locale_gen:
+    name: "{{ locale }}"
+    state: present
+
+- name: Generate extra locales
+  locale_gen:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ extra_locales }}"
+
+- name: Set default locale
+  command: localectl set-locale LANG={{ locale }}
+  changed_when: false
+
+- name: Install base packages
+  apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Create admin group
+  group:
+    name: "{{ admin_group }}"
+    state: present
+
+- name: Create admin user
+  user:
+    name: "{{ admin_username }}"
+    group: "{{ admin_group }}"
+    groups: sudo
+    append: yes
+    shell: "{{ admin_shell }}"
+    createhome: yes
+    state: present
+
+- name: Set authorized keys for admin user
+  authorized_key:
+    user: "{{ admin_username }}"
+    key: "{{ item }}"
+    state: present
+  loop: "{{ admin_ssh_keys }}"
+
+- name: Configure sudo for admin group without password
+  copy:
+    content: "%{{ admin_group }} ALL=(ALL) NOPASSWD: ALL\n"
+    dest: "/etc/sudoers.d/{{ admin_group }}"
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+- name: Disable root SSH login
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^PermitRootLogin"
+    line: "PermitRootLogin no"
+    state: present
+  notify: restart sshd

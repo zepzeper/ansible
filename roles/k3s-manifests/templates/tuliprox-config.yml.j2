@@ -1,0 +1,13 @@
+api:
+  host: 0.0.0.0
+  port: 8080
+  web_root: ./web
+working_dir: ./data
+update_on_boot: true
+schedules:
+  - schedule: "0 0 6 * * * *"
+    targets:
+      - filtered_iptv
+  - schedule: "0 0 18 * * * *"
+    targets:
+      - filtered_iptv

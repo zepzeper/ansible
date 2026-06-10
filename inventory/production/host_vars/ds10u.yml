@@ -1,0 +1,18 @@
+---
+server_hostname: "ds10u"
+platform: "x86_64"
+
+# SSH public keys for zepzeper user
+admin_ssh_keys:
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIvahGXx4ZzNORLnx3OgyNRTpkG2cyWQXR8/LdK2T74o Wouter van Krugten"
+  - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD5WB8PM5rtjJ6EFI/qC1BYEUtHZjmYQIGh7kpPjsfHRb2yWoBBT5ZFPIr/8VQNkRwZFhKVXZo+nmyF9CycwqxHtEgSSuCTHrBXRmJXd6dcRKYUxhc7CsWOGyGDuvAsROa4HEUMxw5TjVEQi6DFd3YOmjG+DA5LlCp6+oa4ZQH8kYSZf59pqSvTM1OZXLCQce+/iFI+6Mag0m60277dypAGjGhXL4jnu0Csh1sGSSmxsYlrP2JYVzQBrKfPZL0q7Xx2VsP+MfIyN7/DGe/E9juwESjEhW3VVAUVav35Di6UUM3zLdMObZZvfTwq4awofHMgr2dzCwRv+kDbtLSxV4Aj"
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICvm8nVnf89bkeOP1LvckqBK8d41fwXcDCKi4VTjmIwH zepzeper@localhost-live.jackson.valid"
+
+# Override admin user for this host
+admin_username: "zepzeper"
+admin_group: "zepzeper"
+
+# Boot configuration
+boot_loader: "systemd-boot"
+boot_efi: true
+disk_device: "/dev/sda"

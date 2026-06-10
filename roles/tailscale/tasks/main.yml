@@ -1,0 +1,27 @@
+---
+- name: Install dependencies
+  apt:
+    name: curl
+    state: present
+    update_cache: yes
+
+- name: Install Tailscale via official script
+  shell: curl -fsSL https://tailscale.com/install.sh | sh
+  args:
+    creates: /usr/bin/tailscale
+
+- name: Authenticate and start Tailscale
+  shell: |
+    tailscale up \
+      --authkey="{{ vault_tailscale_authkey }}" \
+      --advertise-routes="{{ k3s_advertise_routes }}" \
+      --accept-routes=false
+  args:
+    creates: /var/lib/tailscale/tailscaled.state
+  notify: restart tailscaled
+
+- name: Enable and start tailscaled
+  systemd:
+    name: tailscaled
+    enabled: yes
+    state: started

@@ -1,0 +1,14 @@
+---
+- name: Install Tailscale on master
+  hosts: k3s_master
+  become: yes
+  gather_facts: yes
+  roles:
+    - tailscale
+
+- name: Install K3s cluster
+  hosts: k3s:all
+  become: yes
+  gather_facts: yes
+  roles:
+    - k3s

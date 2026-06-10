@@ -1,0 +1,20 @@
+---
+# K3s master configuration
+k3s_role: "server"
+k3s_extra_flags: "--disable traefik --write-kubeconfig-mode 644"
+k3s_advertise_routes: "192.168.1.0/24"
+
+# Firewall ports for k3s master
+k3s_master_tcp_ports:
+  - 6443
+  - 10250
+  - 10251
+  - 10252
+  - 53
+
+k3s_master_udp_ports:
+  - 8472
+  - 53
+
+# K3s packages (kubectl installed by k3s, helm/k9s optional)
+k3s_packages: []

@@ -1,0 +1,105 @@
+- Infrastructure:
+    - Pi-hole:
+        icon: pi-hole.png
+        href: https://pihole.krugten.org
+        description: Ad Blocker & DNS
+        siteMonitor: https://pihole.krugten.org
+        widget:
+          type: pihole
+          url: http://pihole.pihole.svc.cluster.local:80
+          version: 6
+          key: changeme
+    - Kuma:
+        icon: uptime-kuma.png
+        href: https://kuma.krugten.org/status/all
+        description: Uptime Monitoring
+        siteMonitor: https://kuma.krugten.org
+        widget:
+          type: uptimekuma
+          url: http://kuma.kuma.svc.cluster.local:3001
+          slug: all
+          key: {{ vault_homepage_uptime_kuma_token }}
+
+- Home:
+    - Home Assistant:
+        icon: home-assistant.png
+        href: https://homeassistant.krugten.org
+        description: Home Automation
+        siteMonitor: https://homeassistant.krugten.org
+        widget:
+          type: homeassistant
+          url: http://home-assistant.home-assistant.svc.cluster.local:8123
+          key: {{ vault_homepage_homeassistant_token }}
+    - Mealie:
+        icon: mealie.png
+        href: https://mealie.krugten.org
+        description: Recipe Manager
+        siteMonitor: https://mealie.krugten.org
+        widget:
+          type: mealie
+          url: http://mealie.mealie.svc.cluster.local:9000
+          key: {{ vault_homepage_mealie_token }}
+          version: 2
+
+- Books:
+    - Calibre:
+        icon: calibre.png
+        href: https://calibre.krugten.org
+        description: Ebook Library Manager
+        siteMonitor: https://calibre.krugten.org
+
+- Media:
+    - Readarr:
+        icon: readarr.png
+        href: https://readarr.krugten.org
+        description: Ebook & Audiobook Manager
+        siteMonitor: https://readarr.krugten.org
+        widget:
+          type: readarr
+          url: http://readarr.media.svc.cluster.local:8787
+          key: {{ vault_homepage_readarr_token }}
+    - Prowlarr:
+        icon: prowlarr.png
+        href: https://prowlarr.krugten.org
+        description: Indexer Manager
+        siteMonitor: https://prowlarr.krugten.org
+        widget:
+          type: prowlarr
+          url: http://prowlarr.media.svc.cluster.local:9696
+          key: {{ vault_homepage_prowlarr_token }}
+    - qBittorrent:
+        icon: qbittorrent.png
+        href: https://qbittorrent.krugten.org
+        description: Torrent Client
+        siteMonitor: https://qbittorrent.krugten.org
+        widget:
+          type: qbittorrent
+          url: http://qbittorrent.media.svc.cluster.local:8080
+          username: {{ vault_homepage_qbittorrent_username }}
+          password: {{ vault_homepage_qbittorrent_password }}
+
+- Documents:
+    - Paperless:
+        icon: paperless-ngx.png
+        href: https://paperless.krugten.org
+        description: Document Management
+        siteMonitor: https://paperless.krugten.org
+
+- Tools:
+    - Vaultwarden:
+        icon: vaultwarden.png
+        href: https://vaultwarden.krugten.org
+        description: Password Manager
+        siteMonitor: https://vaultwarden.krugten.org
+    - Tuliprox:
+        icon: iptv.png
+        href: https://iptv.krugten.org
+        description: IPTV Proxy
+        siteMonitor: https://iptv.krugten.org
+
+#- Gaming:
+#    - Factorio:
+#        icon: factorio.png
+#        href: http://192.168.1.191:34197
+#        description: Factorio Server
+#        ping: 192.168.1.191

@@ -1,0 +1,8 @@
+---
+- name: Include master tasks
+  include_tasks: master.yml
+  when: k3s_role == "server"
+
+- name: Include worker tasks
+  include_tasks: worker.yml
+  when: k3s_role == "agent"

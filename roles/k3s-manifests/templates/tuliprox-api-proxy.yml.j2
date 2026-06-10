@@ -1,0 +1,14 @@
+server:
+    - name: default
+      protocol: https
+      host: iptv.krugten.org
+      port: '443'
+      timezone: Europe/Amsterdam
+      message: Welcome to tuliprox
+user:
+    - target: filtered_iptv
+      credentials:
+        - username: local
+          password: local123
+          proxy: redirect
+          server: default

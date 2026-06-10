@@ -1,0 +1,58 @@
+templates:
+  - name: NL_LIVE
+    value: '^NL\|.*'
+  - name: EN_LIVE
+    value: '^EN\|.*'
+  - name: A_LIVE
+    value: '^A\|.*'
+  - name: NL_VOD
+    value: '^NL\s-\s.*'
+  - name: EN_VOD
+    value: '^EN\s-\s.*'
+  - name: A_VOD
+    value: '^A\s-\s.*'
+  - name: ADULT_CONTENT
+    value: '(?i).*(XXX|Adult|18\+).*'
+  - name: NL_ALL
+    value: '(Title ~ "!NL_LIVE!" OR Title ~ "!NL_VOD!")'
+  - name: EN_ALL
+    value: '(Title ~ "!EN_LIVE!" OR Title ~ "!EN_VOD!")'
+  - name: A_ALL
+    value: '(Title ~ "!A_LIVE!" OR Title ~ "!A_VOD!")'
+sources:
+  - inputs:
+      - name: darktv
+        type: xtream
+        url: http://line.darktv-pro.cc
+        username: {{ vault_tuliprox_username }}
+        password: {{ vault_tuliprox_password }}
+        headers:
+          User-Agent: "Mozilla/5.0 (AppleTV; U; CPU OS 14_2 like Mac OS X; en-us) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Safari/605.1.15"
+          Accept: "application/json"
+        persist: "./playlist_"
+        epg:
+          sources:
+            - url: {{ vault_tuliprox_remote_url }}
+              priority: 0
+              logo_override: false
+          smart_match:
+            enabled: true
+            fuzzy_matching: true
+            match_threshold: 80
+            best_match_threshold: 95
+        options:
+          xtream_skip_live: false
+          xtream_skip_vod: false
+          xtream_skip_series: false
+    targets:
+      - name: filtered_iptv
+        output:
+          - type: xtream
+            skip_live_direct_source: true
+            skip_video_direct_source: true
+            skip_series_direct_source: true
+        filter: "(!NL_ALL! OR !EN_ALL! OR !A_ALL!) AND NOT(Title ~ \"!ADULT_CONTENT!\")"
+        sort:
+          match_as_ascii: true
+          groups:
+            order: asc

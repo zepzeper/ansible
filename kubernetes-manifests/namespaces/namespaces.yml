@@ -1,0 +1,65 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: home-assistant
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vaultwarden
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pihole
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: homepage
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mealie
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kuma
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tuliprox
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-dns
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: books
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: media
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: paperless
+#---
+#apiVersion: v1
+#kind: Namespace
+#metadata:
+#  name: factorio

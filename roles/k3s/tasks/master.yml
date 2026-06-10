@@ -1,0 +1,72 @@
+---
+- name: Install k3s dependencies
+  apt:
+    name:
+      - curl
+      - iptables
+      - conntrack
+    state: present
+    update_cache: yes
+
+- name: Download k3s install script
+  get_url:
+    url: https://get.k3s.io
+    dest: /usr/local/bin/k3s-install.sh
+    mode: "0755"
+
+- name: Install k3s server
+  environment:
+    INSTALL_K3S_EXEC: "server {{ k3s_extra_flags }}"
+    K3S_TOKEN: "{{ vault_k3s_token }}"
+  shell: |
+    /usr/local/bin/k3s-install.sh
+  args:
+    creates: /usr/local/bin/k3s
+
+- name: Wait for k3s to be ready
+  command: kubectl get nodes
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: k3s_status
+  retries: 30
+  delay: 5
+  until: k3s_status.rc == 0
+  changed_when: false
+
+- name: Install k3s CLI tools
+  apt:
+    name: "{{ k3s_packages }}"
+    state: present
+  when: k3s_packages | length > 0
+
+- name: Add k3s master firewall rules
+  shell: |
+    set -e
+    for port in {{ k3s_master_tcp_ports | join(" ") }}; do
+      iptables -C INPUT -p tcp --dport $port -j ACCEPT 2>/dev/null || \
+        iptables -A INPUT -p tcp --dport $port -j ACCEPT
+    done
+    for port in {{ k3s_master_udp_ports | join(" ") }}; do
+      iptables -C INPUT -p udp --dport $port -j ACCEPT 2>/dev/null || \
+        iptables -A INPUT -p udp --dport $port -j ACCEPT
+    done
+    iptables-save > /etc/iptables/rules.v4
+  notify: restore iptables
+
+- name: Create .kube directory for admin user
+  file:
+    path: "/home/{{ admin_username }}/.kube"
+    state: directory
+    owner: "{{ admin_username }}"
+    group: "{{ admin_group }}"
+    mode: "0755"
+
+- name: Copy kubeconfig to admin user
+  copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "/home/{{ admin_username }}/.kube/config"
+    owner: "{{ admin_username }}"
+    group: "{{ admin_group }}"
+    mode: "0600"
+    remote_src: yes
+  become: yes

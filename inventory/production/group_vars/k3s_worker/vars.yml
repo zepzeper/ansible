@@ -1,0 +1,10 @@
+---
+# K3s worker configuration
+k3s_role: "agent"
+
+# Firewall ports for k3s worker
+k3s_worker_tcp_ports:
+  - 10250
+
+k3s_worker_udp_ports:
+  - 8472

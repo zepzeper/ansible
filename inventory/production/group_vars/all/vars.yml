@@ -1,0 +1,33 @@
+---
+# Time & locale
+timezone: "Europe/Amsterdam"
+locale: "en_US.UTF-8"
+extra_locales:
+  - "nl_NL.UTF-8"
+
+# Admin user
+admin_username: "admin"
+admin_group: "admin"
+admin_shell: "/bin/bash"
+
+# Base packages
+base_packages:
+  - curl
+  - wget
+  - git
+  - htop
+  - vim
+  - sudo
+  - rsync
+  - ca-certificates
+  - gnupg
+  - lsb-release
+
+# Server packages
+server_packages:
+  - btop
+  - iotop
+  - tcpdump
+  - ethtool
+  - fzf
+  - jq
