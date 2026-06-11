@@ -1,0 +1,28 @@
+---
+skip_list:
+  - name[casing]
+  - role-name
+  - fqcn-builtins
+  - experimental
+  - yaml[indentation]
+
+warn_list:
+  - command-instead-of-module
+  - no-changed-when
+  - meta-no-tags
+
+exclude_paths:
+  - .git/
+  - .github/
+  - .vscode/
+  - preseed/
+  - scripts/
+  - kubernetes-manifests/
+
+kinds:
+  - playbook: "playbooks/*.yml"
+  - tasks: "roles/*/tasks/*.yml"
+  - handlers: "roles/*/handlers/*.yml"
+  - vars: "**/vars/*.yml"
+  - vars: "**/vars.yml"
+  - meta: "roles/*/meta/main.yml"

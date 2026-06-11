@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily restic backup
+Documentation=https://restic.readthedocs.io/
+
+[Timer]
+OnCalendar={{ backup_schedule }}
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

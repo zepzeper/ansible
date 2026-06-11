@@ -1,0 +1,13 @@
+[Unit]
+Description=Restic backup for K3s data
+Documentation=https://restic.readthedocs.io/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ backup_dir }}/restic-backup.sh
+User={{ backup_user }}
+Group={{ backup_group }}
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle

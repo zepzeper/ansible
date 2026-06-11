@@ -7,21 +7,31 @@
       - conntrack
     state: present
     update_cache: yes
+  tags:
+    - k3s
+    - kubernetes
 
 - name: Download k3s install script
   get_url:
     url: https://get.k3s.io
     dest: /usr/local/bin/k3s-install.sh
     mode: "0755"
+  tags:
+    - k3s
+    - kubernetes
 
 - name: Install k3s server
   environment:
     INSTALL_K3S_EXEC: "server {{ k3s_extra_flags }}"
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
     K3S_TOKEN: "{{ vault_k3s_token }}"
   shell: |
     /usr/local/bin/k3s-install.sh
   args:
     creates: /usr/local/bin/k3s
+  tags:
+    - k3s
+    - kubernetes
 
 - name: Wait for k3s to be ready
   command: kubectl get nodes
@@ -32,26 +42,53 @@
   delay: 5
   until: k3s_status.rc == 0
   changed_when: false
+  tags:
+    - k3s
+    - kubernetes
 
 - name: Install k3s CLI tools
   apt:
     name: "{{ k3s_packages }}"
     state: present
   when: k3s_packages | length > 0
+  tags:
+    - k3s
+    - kubernetes
 
-- name: Add k3s master firewall rules
-  shell: |
-    set -e
-    for port in {{ k3s_master_tcp_ports | join(" ") }}; do
-      iptables -C INPUT -p tcp --dport $port -j ACCEPT 2>/dev/null || \
-        iptables -A INPUT -p tcp --dport $port -j ACCEPT
-    done
-    for port in {{ k3s_master_udp_ports | join(" ") }}; do
-      iptables -C INPUT -p udp --dport $port -j ACCEPT 2>/dev/null || \
-        iptables -A INPUT -p udp --dport $port -j ACCEPT
-    done
-    iptables-save > /etc/iptables/rules.v4
+- name: Allow k3s master TCP ports
+  ansible.posix.iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ item }}"
+    jump: ACCEPT
+    state: present
+  loop: "{{ k3s_master_tcp_ports }}"
+  register: k3s_iptables_tcp_rules
   notify: restore iptables
+  tags:
+    - k3s
+    - firewall
+
+- name: Allow k3s master UDP ports
+  ansible.posix.iptables:
+    chain: INPUT
+    protocol: udp
+    destination_port: "{{ item }}"
+    jump: ACCEPT
+    state: present
+  loop: "{{ k3s_master_udp_ports }}"
+  register: k3s_iptables_udp_rules
+  notify: restore iptables
+  tags:
+    - k3s
+    - firewall
+
+- name: Persist iptables rules
+  shell: iptables-save > /etc/iptables/rules.v4
+  when: k3s_iptables_tcp_rules is changed or k3s_iptables_udp_rules is changed
+  tags:
+    - k3s
+    - firewall
 
 - name: Create .kube directory for admin user
   file:
@@ -60,6 +97,9 @@
     owner: "{{ admin_username }}"
     group: "{{ admin_group }}"
     mode: "0755"
+  tags:
+    - k3s
+    - kubernetes
 
 - name: Copy kubeconfig to admin user
   copy:
@@ -70,3 +110,6 @@
     mode: "0600"
     remote_src: yes
   become: yes
+  tags:
+    - k3s
+    - kubernetes

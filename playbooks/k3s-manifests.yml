@@ -1,7 +1,14 @@
 ---
-- name: Deploy K3s manifests
+- name: Deploy Kubernetes infrastructure
   hosts: k3s_master
   become: yes
   gather_facts: yes
   roles:
-    - k3s-manifests
+    - k8s-base
+
+- name: Deploy Kubernetes applications
+  hosts: k3s_master
+  become: yes
+  gather_facts: yes
+  roles:
+    - k8s-apps

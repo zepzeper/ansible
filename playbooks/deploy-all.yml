@@ -1,23 +1,12 @@
 ---
-- name: Full deploy - bootstrap then k3s then manifests
-  hosts: all
-  become: yes
-  gather_facts: yes
-  roles:
-    - common
-    - server
+- name: Full deployment sequence
+  ansible.builtin.import_playbook: bootstrap.yml
 
 - name: Deploy Tailscale and K3s
-  hosts: k3s:all
-  become: yes
-  gather_facts: yes
-  roles:
-    - tailscale
-    - k3s
+  ansible.builtin.import_playbook: k3s.yml
 
-- name: Deploy K3s manifests
-  hosts: k3s_master
-  become: yes
-  gather_facts: yes
-  roles:
-    - k3s-manifests
+- name: Deploy Kubernetes manifests
+  ansible.builtin.import_playbook: k3s-manifests.yml
+
+- name: Install and configure backup system
+  ansible.builtin.import_playbook: backup.yml

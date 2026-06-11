@@ -1,0 +1,9 @@
+---
+k3s_version: ""
+k3s_role: server
+k3s_extra_flags: ""
+k3s_master_tcp_ports: []
+k3s_master_udp_ports: []
+k3s_worker_tcp_ports: []
+k3s_worker_udp_ports: []
+k3s_packages: []

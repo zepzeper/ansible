@@ -1,27 +1,65 @@
 ---
-- name: Install dependencies
+- name: Install Tailscale dependencies
   apt:
-    name: curl
+    name:
+      - curl
+      - gnupg
+      - lsb-release
     state: present
     update_cache: yes
+  tags:
+    - networking
+    - tailscale
 
-- name: Install Tailscale via official script
-  shell: curl -fsSL https://tailscale.com/install.sh | sh
-  args:
-    creates: /usr/bin/tailscale
+- name: Add Tailscale apt repository
+  ansible.builtin.deb822_repository:
+    name: tailscale
+    types: deb
+    uris: https://pkgs.tailscale.com/stable/{{ ansible_distribution | lower }}
+    suites: "{{ ansible_distribution_release }}"
+    components: main
+    signed_by: https://pkgs.tailscale.com/stable/{{ ansible_distribution | lower }}/{{ ansible_distribution_release | lower }}.noarmor.gpg
+    state: present
+  tags:
+    - networking
+    - tailscale
 
-- name: Authenticate and start Tailscale
-  shell: |
-    tailscale up \
-      --authkey="{{ vault_tailscale_authkey }}" \
-      --advertise-routes="{{ k3s_advertise_routes }}" \
-      --accept-routes=false
-  args:
-    creates: /var/lib/tailscale/tailscaled.state
-  notify: restart tailscaled
+- name: Install Tailscale package
+  apt:
+    name: tailscale
+    state: present
+  tags:
+    - networking
+    - tailscale
 
-- name: Enable and start tailscaled
+- name: Enable tailscaled service
   systemd:
     name: tailscaled
     enabled: yes
     state: started
+  tags:
+    - networking
+    - tailscale
+
+- name: Check if Tailscale is already authenticated
+  command: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+  tags:
+    - networking
+    - tailscale
+
+- name: Authenticate Tailscale
+  shell: |
+    tailscale up \
+      --authkey="{{ vault_tailscale_authkey }}" \
+      --advertise-routes="{{ k3s_advertise_routes }}" \
+      --accept-routes={{ tailscale_accept_routes | default('false') }}
+  when: >
+    tailscale_status.rc != 0 or
+    (tailscale_status.stdout | from_json | default({})).get('BackendState') != 'Running'
+  notify: restart tailscaled
+  tags:
+    - networking
+    - tailscale

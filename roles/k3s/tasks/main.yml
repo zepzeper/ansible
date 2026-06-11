@@ -2,7 +2,13 @@
 - name: Include master tasks
   include_tasks: master.yml
   when: k3s_role == "server"
+  tags:
+    - k3s
+    - kubernetes
 
 - name: Include worker tasks
   include_tasks: worker.yml
   when: k3s_role == "agent"
+  tags:
+    - k3s
+    - kubernetes

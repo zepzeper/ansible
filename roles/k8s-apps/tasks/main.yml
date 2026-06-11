@@ -1,0 +1,114 @@
+---
+- name: Create Home Assistant configuration
+  template:
+    src: configuration.yaml.j2
+    dest: /var/lib/home-assistant/configuration.yaml
+    mode: "0644"
+  tags:
+    - apps
+    - home-assistant
+
+- name: Create Home Assistant themes directory
+  file:
+    path: /var/lib/home-assistant/themes
+    state: directory
+    mode: "0755"
+  tags:
+    - apps
+    - home-assistant
+
+- name: Create Home Assistant placeholder files
+  copy:
+    content: ""
+    dest: "{{ item }}"
+    force: no
+    mode: "0644"
+  loop:
+    - /var/lib/home-assistant/automations.yaml
+    - /var/lib/home-assistant/scripts.yaml
+    - /var/lib/home-assistant/scenes.yaml
+    - /var/lib/home-assistant/themes/.gitkeep
+  tags:
+    - apps
+    - home-assistant
+
+- name: Create Homepage config files
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - src: homepage-settings.yaml.j2
+      dest: /var/lib/homepage/settings.yaml
+    - src: homepage-services.yaml.j2
+      dest: /var/lib/homepage/services.yaml
+    - src: homepage-bookmarks.yaml.j2
+      dest: /var/lib/homepage/bookmarks.yaml
+    - src: homepage-widgets.yaml.j2
+      dest: /var/lib/homepage/widgets.yaml
+    - src: homepage-kubernetes.yaml.j2
+      dest: /var/lib/homepage/kubernetes.yaml
+  tags:
+    - apps
+    - homepage
+
+- name: Create TuliProx config files
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - src: tuliprox-source.yml.j2
+      dest: /var/lib/tuliprox/config/source.yml
+    - src: tuliprox-config.yml.j2
+      dest: /var/lib/tuliprox/config/config.yml
+    - src: tuliprox-api-proxy.yml.j2
+      dest: /var/lib/tuliprox/config/api-proxy.yml
+  tags:
+    - apps
+    - tuliprox
+
+- name: Apply application manifests
+  shell: "kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/{{ item }}"
+  register: app_result
+  changed_when: "'created' in app_result.stdout"
+  loop:
+    - pihole/pihole.yml
+    - home-assistant/home-assistant.yml
+    - vaultwarden/vaultwarden.yml
+    - mealie/mealie.yml
+    - uptimekuma/uptimekuma.yml
+    - homepage/homepage.yml
+    - tuliprox/tuliprox.yml
+    - calibre/calibre.yml
+    - media/qbittorrent.yml
+    - media/prowlarr.yml
+    - media/readarr.yml
+    - paperless/paperless.yml
+  tags:
+    - apps
+    - manifests
+
+- name: Wait for application deployments to be ready
+  shell: |
+    kubectl -n {{ item.namespace }} wait --for=condition=Available deployment/{{ item.deploy }} --timeout=120s
+  changed_when: false
+  ignore_errors: true
+  loop:
+    - { namespace: pihole, deploy: pihole }
+    - { namespace: home-assistant, deploy: home-assistant }
+    - { namespace: vaultwarden, deploy: vaultwarden }
+    - { namespace: mealie, deploy: mealie }
+    - { namespace: kuma, deploy: uptimekuma }
+    - { namespace: homepage, deploy: homepage }
+    - { namespace: tuliprox, deploy: tuliprox }
+    - { namespace: books, deploy: calibre }
+    - { namespace: media, deploy: qbittorrent }
+    - { namespace: media, deploy: prowlarr }
+    - { namespace: media, deploy: readarr }
+    - { namespace: paperless, deploy: paperless }
+    - { namespace: paperless, deploy: paperless-redis }
+    - { namespace: paperless, deploy: paperless-postgres }
+  tags:
+    - apps
+    - health

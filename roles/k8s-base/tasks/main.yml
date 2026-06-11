@@ -3,6 +3,7 @@
   file:
     path: /etc/rancher/k3s/k3s.yaml
     mode: "0644"
+  tags: k8s
 
 - name: Copy kubeconfig to admin user
   copy:
@@ -12,12 +13,16 @@
     group: "{{ admin_group }}"
     mode: "0600"
     remote_src: yes
+  tags: k8s
 
 - name: Copy Kubernetes manifests to target host
   synchronize:
     src: "{{ playbook_dir }}/../kubernetes-manifests/"
     dest: "/home/{{ admin_username }}/kubernetes-manifests/"
     delete: yes
+  tags:
+    - k8s
+    - manifests
 
 - name: Create data directories for hostPath volumes
   file:
@@ -33,60 +38,9 @@
     - /var/lib/homepage
     - /var/lib/tuliprox/config
     - /run/secrets/rendered
-
-- name: Create Home Assistant configuration
-  template:
-    src: configuration.yaml.j2
-    dest: /var/lib/home-assistant/configuration.yaml
-    mode: "0644"
-
-- name: Create Home Assistant themes directory
-  file:
-    path: /var/lib/home-assistant/themes
-    state: directory
-    mode: "0755"
-
-- name: Create Home Assistant placeholder files
-  copy:
-    content: ""
-    dest: "{{ item }}"
-    force: no
-    mode: "0644"
-  loop:
-    - /var/lib/home-assistant/automations.yaml
-    - /var/lib/home-assistant/scripts.yaml
-    - /var/lib/home-assistant/scenes.yaml
-    - /var/lib/home-assistant/themes/.gitkeep
-
-- name: Create Homepage config files
-  template:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    mode: "0644"
-  loop:
-    - src: homepage-settings.yaml.j2
-      dest: /var/lib/homepage/settings.yaml
-    - src: homepage-services.yaml.j2
-      dest: /var/lib/homepage/services.yaml
-    - src: homepage-bookmarks.yaml.j2
-      dest: /var/lib/homepage/bookmarks.yaml
-    - src: homepage-widgets.yaml.j2
-      dest: /var/lib/homepage/widgets.yaml
-    - src: homepage-kubernetes.yaml.j2
-      dest: /var/lib/homepage/kubernetes.yaml
-
-- name: Create TuliProx config files
-  template:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    mode: "0644"
-  loop:
-    - src: tuliprox-source.yml.j2
-      dest: /var/lib/tuliprox/config/source.yml
-    - src: tuliprox-config.yml.j2
-      dest: /var/lib/tuliprox/config/config.yml
-    - src: tuliprox-api-proxy.yml.j2
-      dest: /var/lib/tuliprox/config/api-proxy.yml
+  tags:
+    - k8s
+    - storage
 
 - name: Create all required namespaces
   shell: |
@@ -101,25 +55,34 @@
     - mealie
     - kuma
     - tuliprox
+    - metallb-system
     - external-dns
     - books
     - media
     - paperless
-    #- factorio
+  tags:
+    - k8s
+    - namespaces
 
 - name: Apply cert-manager
   shell: |
     kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
   register: cm_result
   changed_when: "'created' in cm_result.stdout"
-  ignore_errors: yes
+  ignore_errors: true
+  tags:
+    - k8s
+    - cert-manager
 
 - name: Wait for cert-manager to be ready
   shell: |
     kubectl -n cert-manager wait --for=condition=Available deployment/cert-manager --timeout=180s
     kubectl -n cert-manager wait --for=condition=Available deployment/cert-manager-webhook --timeout=180s
   changed_when: false
-  ignore_errors: yes
+  ignore_errors: true
+  tags:
+    - k8s
+    - cert-manager
 
 - name: Create Cloudflare API token secrets
   shell: |
@@ -140,45 +103,68 @@
     - books
     - media
     - paperless
+  tags:
+    - k8s
+    - secrets
 
 - name: Apply ClusterIssuer
   shell: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/cert-manager/cluster-issuer.yml
   register: ci_result
   changed_when: "'created' in ci_result.stdout"
+  tags:
+    - k8s
+    - cert-manager
 
 - name: Apply nginx-ingress
   shell: |
     kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
   register: ing_result
   changed_when: "'created' in ing_result.stdout"
-  ignore_errors: yes
+  ignore_errors: true
+  tags:
+    - k8s
+    - ingress
 
 - name: Wait for nginx-ingress controller to be ready
   shell: |
     kubectl -n ingress-nginx wait --for=condition=Available deployment/ingress-nginx-controller --timeout=180s
   changed_when: false
-  ignore_errors: yes
+  ignore_errors: true
+  tags:
+    - k8s
+    - ingress
+
+- name: Apply MetalLB
+  shell: |
+    kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
+  register: mlb_result
+  changed_when: "'created' in mlb_result.stdout"
+  ignore_errors: true
+  tags:
+    - k8s
+    - metallb
+
+- name: Wait for MetalLB to be ready
+  shell: |
+    kubectl -n metallb-system wait --for=condition=Available deployment/controller --timeout=180s
+  changed_when: false
+  ignore_errors: true
+  tags:
+    - k8s
+    - metallb
+
+- name: Apply MetalLB IPPool
+  shell: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/metallb/ippool.yml
+  register: ippool_result
+  changed_when: "'created' in ippool_result.stdout"
+  tags:
+    - k8s
+    - metallb
 
 - name: Apply external-dns
   shell: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/external-dns/external-dns.yml
   register: edns_result
   changed_when: "'created' in edns_result.stdout"
-
-- name: Apply application manifests
-  shell: "kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/{{ item }}"
-  register: app_result
-  changed_when: "'created' in app_result.stdout"
-  loop:
-    - pihole/pihole.yml
-    - home-assistant/home-assistant.yml
-    - vaultwarden/vaultwarden.yml
-    - mealie/mealie.yml
-    - uptimekuma/uptimekuma.yml
-    - homepage/homepage.yml
-    - tuliprox/tuliprox.yml
-    - calibre/calibre.yml
-    - media/qbittorrent.yml
-    - media/prowlarr.yml
-    - media/readarr.yml
-    - paperless/paperless.yml
-    # - factorio/factorio.yml
+  tags:
+    - k8s
+    - dns

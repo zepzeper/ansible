@@ -9,6 +9,7 @@ extra_locales:
 admin_username: "admin"
 admin_group: "admin"
 admin_shell: "/bin/bash"
+admin_ssh_keys: []
 
 # Base packages
 base_packages:
@@ -31,3 +32,5 @@ server_packages:
   - ethtool
   - fzf
   - jq
+  - unattended-upgrades
+  - apt-listchanges

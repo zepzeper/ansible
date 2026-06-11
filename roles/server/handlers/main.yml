@@ -4,6 +4,11 @@
     name: sshd
     state: restarted
 
+- name: restart journald
+  systemd:
+    name: systemd-journald
+    state: restarted
+
 - name: restore iptables
   shell: |
     iptables-restore < /etc/iptables/rules.v4

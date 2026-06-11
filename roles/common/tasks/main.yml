@@ -2,6 +2,7 @@
 - name: Set hostname
   hostname:
     name: "{{ server_hostname }}"
+  tags: bootstrap
 
 - name: Update /etc/hosts
   lineinfile:
@@ -9,25 +10,30 @@
     regexp: '^127\.0\.1\.1'
     line: "127.0.1.1 {{ server_hostname }}"
     state: present
+  tags: bootstrap
 
-- name: Set timezone to Europe/Amsterdam
-  timezone:
+- name: Set timezone
+  community.general.timezone:
     name: "{{ timezone }}"
+  tags: bootstrap
 
 - name: Generate en_US.UTF-8 locale
-  locale_gen:
+  community.general.locale_gen:
     name: "{{ locale }}"
     state: present
+  tags: bootstrap
 
 - name: Generate extra locales
-  locale_gen:
+  community.general.locale_gen:
     name: "{{ item }}"
     state: present
   loop: "{{ extra_locales }}"
+  tags: bootstrap
 
 - name: Set default locale
   command: localectl set-locale LANG={{ locale }}
   changed_when: false
+  tags: bootstrap
 
 - name: Install base packages
   apt:
@@ -35,11 +41,13 @@
     state: present
     update_cache: yes
     cache_valid_time: 3600
+  tags: bootstrap
 
 - name: Create admin group
   group:
     name: "{{ admin_group }}"
     state: present
+  tags: users
 
 - name: Create admin user
   user:
@@ -50,13 +58,15 @@
     shell: "{{ admin_shell }}"
     createhome: yes
     state: present
+  tags: users
 
 - name: Set authorized keys for admin user
-  authorized_key:
+  ansible.posix.authorized_key:
     user: "{{ admin_username }}"
     key: "{{ item }}"
     state: present
   loop: "{{ admin_ssh_keys }}"
+  tags: users
 
 - name: Configure sudo for admin group without password
   copy:
@@ -64,6 +74,7 @@
     dest: "/etc/sudoers.d/{{ admin_group }}"
     mode: "0440"
     validate: "visudo -cf %s"
+  tags: users
 
 - name: Disable root SSH login
   lineinfile:
@@ -72,3 +83,4 @@
     line: "PermitRootLogin no"
     state: present
   notify: restart sshd
+  tags: ssh

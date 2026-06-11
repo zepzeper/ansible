@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Restic backup script - managed by Ansible
+set -euo pipefail
+
+export RESTIC_REPOSITORY="{{ restic_repo }}"
+export RESTIC_PASSWORD="{{ restic_password }}"
+export RESTIC_PROGRESS_FPS=0
+
+LOG="/var/log/restic-backup.log"
+
+echo "=== Backup started: $(date) ===" >> "$LOG"
+
+{% for path in backup_paths %}
+if [ -d "{{ path }}" ]; then
+  echo "Backing up {{ path }}..." >> "$LOG"
+  restic backup "{{ path }}" >> "$LOG" 2>&1
+fi
+{% endfor %}
+
+echo "Forgetting old snapshots..." >> "$LOG"
+restic forget \
+  --keep-last {{ restic_retention.keep_last }} \
+  --keep-daily {{ restic_retention.keep_daily }} \
+  --keep-weekly {{ restic_retention.keep_weekly }} \
+  --keep-monthly {{ restic_retention.keep_monthly }} \
+  --prune >> "$LOG" 2>&1
+
+echo "=== Backup finished: $(date) ===" >> "$LOG"
+echo "" >> "$LOG"

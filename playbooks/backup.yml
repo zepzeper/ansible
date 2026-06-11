@@ -1,0 +1,7 @@
+---
+- name: Install and configure backup system
+  hosts: all
+  become: yes
+  gather_facts: yes
+  roles:
+    - backup
