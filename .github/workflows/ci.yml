@@ -24,6 +24,8 @@ jobs:
           ansible-galaxy collection install -r requirements.yml
 
       - name: ansible-lint
+        env:
+          ANSIBLE_VAULT_PASSWORD: dummy
         run: ansible-lint
 
   syntax-check:
