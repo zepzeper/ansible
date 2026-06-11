@@ -70,7 +70,7 @@ Includes `master.yml` (when `k3s_role == "server"`) or `worker.yml` (when `k3s_r
 | Fix kubeconfig perms | `k8s` | `chmod 0644 /etc/rancher/k3s/k3s.yaml` |
 | Copy manifests | `k8s`, `manifests` | Rsyncs `kubernetes-manifests/` to target |
 | Create hostPath dirs | `k8s`, `storage` | `/var/lib/pihole`, etc. |
-| Create namespaces | `k8s`, `namespaces` | 12 namespaces via `kubectl create ns` |
+| Create namespaces | `k8s`, `namespaces` | 13 namespaces via `kubectl create ns` |
 | Apply cert-manager | `k8s`, `cert-manager` | Official manifest + wait for ready |
 | Create Cloudflare secrets | `k8s`, `secrets` | API token injected into 11 namespaces |
 | Apply ClusterIssuer | `k8s`, `cert-manager` | Let's Encrypt prod with Cloudflare DNS01 |
@@ -97,9 +97,9 @@ Includes `master.yml` (when `k3s_role == "server"`) or `worker.yml` (when `k3s_r
 | Task | Tags | Detail |
 |------|------|--------|
 | Install restic | `backup` | `apt install restic` |
-| Init repo | `backup` | `restic init` if not already initialized |
+| Init repo | `backup` | `restic init --insecure-no-password` if not already initialized |
 | Deploy backup script | `backup` | Template that backs up all hostPath dirs |
 | Deploy systemd units | `backup` | Service + timer |
 | Enable timer | `backup` | Runs daily at 02:00 |
 
-**Variables:** `restic_repo`, `restic_password`, `backup_paths`, `restic_retention`
+**Variables:** `restic_repo`, `backup_paths`, `restic_retention`

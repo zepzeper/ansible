@@ -5,22 +5,21 @@
 ```mermaid
 flowchart TD
     Internet[Internet]
-    Pi[Pi worker]
     Router[Router 192.168.1.1]
-    DS10U[ds10u master<br/>100.117.255.24]
-    MetalLB[MetalLB<br/>pool 192.168.1.2-192.168.1.20]
+    DS10U["ds10u (master)<br/>nginx-ingress + Pi-hole + all apps"]
+    Pi["Pi (worker)<br/>Tailscale only<br/>not yet connected"]
+    MetalLB[MetalLB pool<br/>192.168.1.2-192.168.1.20]
     Pihole[Pi-hole 192.168.1.2]
     Homepage[Homepage]
     Others[Other apps]
 
-    Internet -->|pi.krugten.org<br/>*.krugten.org| Pi
-    Internet -->|pihole.krugten.org<br/>via ingress| Router
-    Pi -->|Tailscale 100.117.255.24| DS10U
+    Internet -->|"*.krugten.org port 80/443"| Router
     Router -->|LAN 192.168.1.x| DS10U
-    DS10U -->|LoadBalancer IPs| MetalLB
+    DS10U --> MetalLB
     MetalLB --> Pihole
     MetalLB --> Homepage
     MetalLB --> Others
+    DS10U ---|Tailscale mesh| Pi
 ```
 
 ### Tailscale
@@ -39,11 +38,11 @@ Services with LoadBalancer IPs:
 | Component | Detail |
 |-----------|--------|
 | Master | `ds10u` — runs control plane + workloads |
-| Worker | `pi` — runs workloads only |
+| Worker | `pi` — not yet joined, Tailscale connected |
 | CNI | Flannel (K3s default) |
 | Ingress | nginx-ingress (Traefik disabled via `--disable traefik`) |
 | DNS | CoreDNS |
-| Storage | hostPath + PVC (Longhorn/local-path-provisioner) |
+| Storage | hostPath + PVC (K3s local-path-provisioner) |
 
 ### DNS chain
 

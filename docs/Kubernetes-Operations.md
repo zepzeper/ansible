@@ -125,7 +125,7 @@ kubectl get all -A                                          # pods, services, de
 
 **Important:** All ingress traffic arrives via `ingress-nginx` on MetalLB IP **192.168.1.10**. Your router forwards ports 80/443 to this IP.
 
-Pi-hole DNS gets a dedicated LoadBalancer IP **192.168.1.2** (outside the MetalLB pool range so it doesn't conflict).
+Pi-hole DNS gets a dedicated LoadBalancer IP **192.168.1.2** (at the start of the MetalLB pool range).
 
 ### Quick health check
 
@@ -377,6 +377,7 @@ Data lives on `ds10u` under `/var/lib/`:
 | `/var/lib/pihole/etc` | Pi-hole config |
 | `/var/lib/pihole/dnsmasq` | Pi-hole DNS config |
 | `/var/lib/home-assistant` | Home Assistant config + DB |
+| `/var/lib/home-assistant/custom_components` | Home Assistant custom components |
 | `/var/lib/vaultwarden` | Vaultwarden SQLite DB |
 | `/var/lib/homepage` | Homepage dashboard config |
 | `/var/lib/tuliprox/config` | TuliProx app config |

@@ -46,6 +46,7 @@ jobs:
       - name: Syntax check all playbooks
         env:
           ANSIBLE_VAULT_PASSWORD: dummy
+          ANSIBLE_PLAYBOOK: ansible-playbook
         run: make syntax-check
 
   wiki-sync:

@@ -14,20 +14,19 @@ Ansible-managed homelab running [K3s](https://k3s.io/) on two nodes with Tailsca
 ```mermaid
 flowchart TD
     Internet[Internet]
-    Pi[Pi worker<br/>pi.krugten.org]
     Router[Router<br/>192.168.1.1]
-    DS10U[ds10u master<br/>192.168.1.x<br/>100.117.255.24]
+    DS10U["ds10u (master)<br/>nginx-ingress + Pi-hole + apps<br/>192.168.1.x / 100.117.255.24"]
+    Pi["Pi (worker)<br/>not yet connected<br/>Tailscale only"]
     MetalLB[MetalLB<br/>192.168.1.2-192.168.1.20]
     Pihole[Pi-hole<br/>192.168.1.2]
     Others[Other services<br/>LoadBalancer IPs]
 
-    Internet -->|Tailscale| Pi
-    Internet --> Router
-    Pi -->|Tailscale mesh| DS10U
-    Router --> DS10U
+    Internet -->|"*.krugten.org port 80/443"| Router
+    Router -->|LAN| DS10U
     DS10U --> MetalLB
     MetalLB --> Pihole
     MetalLB --> Others
+    DS10U ---|Tailscale mesh| Pi
 ```
 
 ## Stack

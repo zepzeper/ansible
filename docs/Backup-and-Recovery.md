@@ -10,7 +10,7 @@ Backups are managed by [restic](https://restic.net/) with a systemd timer runnin
 | `/var/lib/home-assistant` | Home Assistant config |
 | `/var/lib/vaultwarden` | Vaultwarden data |
 | `/var/lib/homepage` | Homepage dashboard config |
-| `/var/lib/tuliprox/config` | TuliProx config |
+| `/var/lib/tuliprox` | TuliProx config |
 | `/run/secrets/rendered` | Rendered secrets |
 
 ## Retention policy
@@ -34,11 +34,7 @@ restic_repo: /var/backups/restic           # Local path
 # restic_repo: rclone:remote:path
 ```
 
-And the password in `vault.yml`:
-
-```yaml
-restic_password: "your-restic-repo-password"
-```
+No password is used — restic runs with `--insecure-no-password` (local backup repo on a trusted host).
 
 ## Running on demand
 
@@ -58,17 +54,17 @@ sudo journalctl -u restic-backup.service   # Check results
 
 ```bash
 # List snapshots
-restic -r /var/backups/restic snapshots
+restic -r /var/backups/restic snapshots --insecure-no-password
 
 # Restore latest snapshot to a temp directory
-restic -r /var/backups/restic restore latest --target /tmp/restore
+restic -r /var/backups/restic restore latest --target /tmp/restore --insecure-no-password
 
 # Restore a specific path from latest
 restic -r /var/backups/restic restore latest \
-  --path /var/lib/home-assistant --target /tmp/restore
+  --path /var/lib/home-assistant --target /tmp/restore --insecure-no-password
 
 # Restore a specific snapshot
-restic -r /var/backups/restic restore <snapshot-id> --target /tmp/restore
+restic -r /var/backups/restic restore <snapshot-id> --target /tmp/restore --insecure-no-password
 ```
 
 For Kubernetes PVC-based apps (Mealie, Calibre, Paperless, etc.), back up and restore via:
