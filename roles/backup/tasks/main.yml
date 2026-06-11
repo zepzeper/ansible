@@ -18,12 +18,11 @@
   tags: backup
 
 - name: Initialize restic repository
-  command: restic init
+  command: restic init --insecure-no-password
   args:
     creates: "{{ restic_repo }}/config"
   environment:
     RESTIC_REPOSITORY: "{{ restic_repo }}"
-    RESTIC_PASSWORD: "{{ restic_password }}"
   tags: backup
 
 - name: Deploy backup script

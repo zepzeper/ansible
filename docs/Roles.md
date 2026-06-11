@@ -56,7 +56,7 @@ Includes `master.yml` (when `k3s_role == "server"`) or `worker.yml` (when `k3s_r
 | Install dependencies | `k3s` | curl, iptables, conntrack |
 | Download install script | `k3s` | `get.k3s.io` |
 | Install k3s | `k3s` | Server or agent with version pinning |
-| Open firewall ports | `k3s`, `firewall` | Per-role port lists via `ansible.posix.iptables` |
+| Open firewall ports | `k3s`, `firewall` | Per-role port lists via `ansible.builtin.iptables` |
 | Copy kubeconfig | `k3s` | Master only — to admin user's `~/.kube/config` |
 
 **Variables:** `k3s_role`, `k3s_version`, `k3s_extra_flags`, `k3s_master_tcp_ports`, `k3s_master_udp_ports`, `k3s_worker_tcp_ports`, `k3s_worker_udp_ports`, `vault_k3s_token`

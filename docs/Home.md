@@ -11,21 +11,23 @@ Ansible-managed homelab running [K3s](https://k3s.io/) on two nodes with Tailsca
 
 ## Network
 
-```
-Internet
-  │
-  ├─ pi.krugten.org ──── Pi (worker) ── Tailscale ──┐
-  │                                                   │
-  └─ Router (192.168.1.1)                             │
-      └─ ds10u (master) ──────────────────────────────┘
-                           │
-                      MetalLB
-                    192.168.1.2-20
-                           │
-                    ┌──────┴──────┐
-                    │              │
-                 Pi-hole      Other services
-               (192.168.1.2)   (LoadBalancer IPs)
+```mermaid
+flowchart TD
+    Internet[Internet]
+    Pi[Pi worker<br/>pi.krugten.org]
+    Router[Router<br/>192.168.1.1]
+    DS10U[ds10u master<br/>192.168.1.x<br/>100.117.255.24]
+    MetalLB[MetalLB<br/>192.168.1.2-192.168.1.20]
+    Pihole[Pi-hole<br/>192.168.1.2]
+    Others[Other services<br/>LoadBalancer IPs]
+
+    Internet -->|Tailscale| Pi
+    Internet --> Router
+    Pi -->|Tailscale mesh| DS10U
+    Router --> DS10U
+    DS10U --> MetalLB
+    MetalLB --> Pihole
+    MetalLB --> Others
 ```
 
 ## Stack
@@ -40,6 +42,7 @@ Internet
 | DNS | Pi-hole + ExternalDNS (Cloudflare) |
 | TLS | cert-manager + Let's Encrypt |
 | Backups | restic + systemd timer |
+| Debugging | [Kubernetes Operations](Kubernetes-Operations) |
 | Secrets | Ansible Vault |
 
 ## Quick start

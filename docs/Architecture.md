@@ -2,38 +2,25 @@
 
 ## Network topology
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   Internet                           │
-└────────┬──────────────┬──────────────────────────────┘
-         │              │
-    pi.krugten.org    pihole.krugten.org
-    *.krugten.org     (via ingress)
-         │              │
-    ┌────┴────┐    ┌────┴────┐
-    │ Pi      │    │ Router  │
-    │ (worker)│    │ 192.168 │
-    │ Tailnet │    │  .1.1   │
-    └────┬────┘    └────┬────┘
-         │              │
-         │    Tailscale │
-         │    100.x.x.x │
-         └──────┬───────┘
-                │
-          ┌─────┴──────┐
-          │ ds10u       │
-          │ (master)    │
-          │ 192.168.1.x │
-          │ 100.117     │
-          │  .255.24    │
-          └──────┬──────┘
-                 │
-           MetalLB │ 192.168.1.2-192.168.1.20
-                 │
-     ┌───────────┼───────────┐
-     │           │           │
-  Pi-hole   Homepage     Other apps
-   .1.2        .×××
+```mermaid
+flowchart TD
+    Internet[Internet]
+    Pi[Pi worker]
+    Router[Router 192.168.1.1]
+    DS10U[ds10u master<br/>100.117.255.24]
+    MetalLB[MetalLB<br/>pool 192.168.1.2-192.168.1.20]
+    Pihole[Pi-hole 192.168.1.2]
+    Homepage[Homepage]
+    Others[Other apps]
+
+    Internet -->|pi.krugten.org<br/>*.krugten.org| Pi
+    Internet -->|pihole.krugten.org<br/>via ingress| Router
+    Pi -->|Tailscale 100.117.255.24| DS10U
+    Router -->|LAN 192.168.1.x| DS10U
+    DS10U -->|LoadBalancer IPs| MetalLB
+    MetalLB --> Pihole
+    MetalLB --> Homepage
+    MetalLB --> Others
 ```
 
 ### Tailscale
@@ -60,12 +47,22 @@ Services with LoadBalancer IPs:
 
 ### DNS chain
 
-```
-Device → Pi-hole (192.168.1.2) → Upstream DNS (8.8.8.8)
-         │
-         └── krugten.org → ExternalDNS → Cloudflare API
-                 │
-             *.krugten.org → nginx-ingress → Service
+```mermaid
+flowchart LR
+    Device[Device]
+    Pihole[Pi-hole 192.168.1.2]
+    Upstream[Upstream DNS 8.8.8.8]
+    ExternalDNS[ExternalDNS]
+    Cloudflare[Cloudflare API]
+    Ingress[nginx-ingress 192.168.1.10]
+    Service[K8s Service]
+
+    Device -->|general DNS| Pihole
+    Pihole -->|non-krugten.org| Upstream
+    Pihole -->|krugten.org| ExternalDNS
+    ExternalDNS -->|sync ingress hosts| Cloudflare
+    Cloudflare -->|*.krugten.org| Ingress
+    Ingress -->|route| Service
 ```
 
 All LAN devices get `192.168.1.2` as DNS via DHCP. Pi-hole handles ad-blocking and local DNS. ExternalDNS syncs ingress hostnames to Cloudflare DNS.

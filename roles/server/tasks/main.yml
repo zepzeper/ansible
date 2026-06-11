@@ -102,7 +102,7 @@
 - name: Disable swap immediately
   command: swapoff -a
   changed_when: false
-  when: ansible_swaptotal_mb > 0
+  when: ansible_facts['swaptotal_mb'] > 0
   tags: system
 
 - name: Remove swap from fstab
@@ -110,8 +110,8 @@
     name: "{{ item }}"
     fstype: swap
     state: absent
-  loop: "{{ ansible_mounts | selectattr('fstype', 'equalto', 'swap') | map(attribute='mount') | list }}"
-  when: ansible_mounts | selectattr('fstype', 'equalto', 'swap') | list | length > 0
+  loop: "{{ ansible_facts['mounts'] | selectattr('fstype', 'equalto', 'swap') | map(attribute='mount') | list }}"
+  when: ansible_facts['mounts'] | selectattr('fstype', 'equalto', 'swap') | list | length > 0
   tags: system
 
 ###############################################################################

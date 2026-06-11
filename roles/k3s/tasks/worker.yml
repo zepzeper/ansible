@@ -35,7 +35,7 @@
     - kubernetes
 
 - name: Allow k3s worker TCP ports
-  ansible.posix.iptables:
+  ansible.builtin.iptables:
     chain: INPUT
     protocol: tcp
     destination_port: "{{ item }}"
@@ -49,7 +49,7 @@
     - firewall
 
 - name: Allow k3s worker UDP ports
-  ansible.posix.iptables:
+  ansible.builtin.iptables:
     chain: INPUT
     protocol: udp
     destination_port: "{{ item }}"

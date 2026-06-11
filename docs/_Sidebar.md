@@ -6,4 +6,5 @@
 - [Inventory](Inventory)
 - [Secrets](Secrets)
 - [Applications](Applications)
+- [Kubernetes Operations](Kubernetes-Operations)
 - [Backup and Recovery](Backup-and-Recovery)
