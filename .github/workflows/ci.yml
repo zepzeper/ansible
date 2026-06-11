@@ -43,3 +43,15 @@ jobs:
 
       - name: Syntax check all playbooks
         run: make syntax-check
+
+  wiki-sync:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync docs to GitHub Wiki
+        uses: DannyBen/wiki-sync-action@v1
+        with:
+          source: docs/
+          token: ${{ secrets.GITHUB_TOKEN }}
