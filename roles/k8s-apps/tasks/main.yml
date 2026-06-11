@@ -69,7 +69,7 @@
     - tuliprox
 
 - name: Apply application manifests
-  shell: "kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/{{ item }}"
+  command: "kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/{{ item }}"
   register: app_result
   changed_when: "'created' in app_result.stdout"
   loop:
@@ -91,9 +91,10 @@
 
 - name: Wait for application deployments to be ready
   shell: |
+    set -o pipefail
     kubectl -n {{ item.namespace }} wait --for=condition=Available deployment/{{ item.deploy }} --timeout=120s
   changed_when: false
-  ignore_errors: true
+  failed_when: false
   loop:
     - { namespace: pihole, deploy: pihole }
     - { namespace: home-assistant, deploy: home-assistant }

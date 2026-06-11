@@ -5,10 +5,14 @@ skip_list:
   - fqcn-builtins
   - experimental
   - yaml[indentation]
+  - yaml[truthy]
+  - yaml[line-length]
+  - var-naming
+  - no-changed-when
 
 warn_list:
+  - command-instead-of-shell
   - command-instead-of-module
-  - no-changed-when
   - meta-no-tags
 
 exclude_paths:

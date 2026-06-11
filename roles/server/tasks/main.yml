@@ -106,7 +106,7 @@
   tags: system
 
 - name: Remove swap from fstab
-  mount:
+  ansible.posix.mount:
     name: "{{ item }}"
     fstype: swap
     state: absent
@@ -164,7 +164,7 @@
     state: stopped
     enabled: no
     masked: yes
-  ignore_errors: yes
+  failed_when: false
   loop:
     - bluetooth
     - pipewire

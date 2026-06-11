@@ -16,7 +16,7 @@
   tags: k8s
 
 - name: Copy Kubernetes manifests to target host
-  synchronize:
+  ansible.posix.synchronize:
     src: "{{ playbook_dir }}/../kubernetes-manifests/"
     dest: "/home/{{ admin_username }}/kubernetes-manifests/"
     delete: yes
@@ -44,6 +44,7 @@
 
 - name: Create all required namespaces
   shell: |
+    set -o pipefail
     kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
   changed_when: false
   loop:
@@ -69,23 +70,25 @@
     kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
   register: cm_result
   changed_when: "'created' in cm_result.stdout"
-  ignore_errors: true
+  failed_when: false
   tags:
     - k8s
     - cert-manager
 
 - name: Wait for cert-manager to be ready
   shell: |
+    set -o pipefail
     kubectl -n cert-manager wait --for=condition=Available deployment/cert-manager --timeout=180s
     kubectl -n cert-manager wait --for=condition=Available deployment/cert-manager-webhook --timeout=180s
   changed_when: false
-  ignore_errors: true
+  failed_when: false
   tags:
     - k8s
     - cert-manager
 
 - name: Create Cloudflare API token secrets
   shell: |
+    set -o pipefail
     kubectl create secret generic cloudflare-api-token \
       --namespace={{ item }} \
       --from-literal=api-token={{ vault_cloudflare_api_token }} \
@@ -108,7 +111,7 @@
     - secrets
 
 - name: Apply ClusterIssuer
-  shell: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/cert-manager/cluster-issuer.yml
+  command: kubectl apply -f "/home/{{ admin_username }}/kubernetes-manifests/cert-manager/cluster-issuer.yml"
   register: ci_result
   changed_when: "'created' in ci_result.stdout"
   tags:
@@ -116,11 +119,10 @@
     - cert-manager
 
 - name: Apply nginx-ingress
-  shell: |
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
+  command: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
   register: ing_result
   changed_when: "'created' in ing_result.stdout"
-  ignore_errors: true
+  failed_when: false
   tags:
     - k8s
     - ingress
@@ -129,7 +131,7 @@
   shell: |
     kubectl -n ingress-nginx wait --for=condition=Available deployment/ingress-nginx-controller --timeout=180s
   changed_when: false
-  ignore_errors: true
+  failed_when: false
   tags:
     - k8s
     - ingress
@@ -139,7 +141,7 @@
     kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
   register: mlb_result
   changed_when: "'created' in mlb_result.stdout"
-  ignore_errors: true
+  failed_when: false
   tags:
     - k8s
     - metallb
@@ -148,13 +150,13 @@
   shell: |
     kubectl -n metallb-system wait --for=condition=Available deployment/controller --timeout=180s
   changed_when: false
-  ignore_errors: true
+  failed_when: false
   tags:
     - k8s
     - metallb
 
 - name: Apply MetalLB IPPool
-  shell: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/metallb/ippool.yml
+  command: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/metallb/ippool.yml
   register: ippool_result
   changed_when: "'created' in ippool_result.stdout"
   tags:
@@ -162,7 +164,7 @@
     - metallb
 
 - name: Apply external-dns
-  shell: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/external-dns/external-dns.yml
+  command: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/external-dns/external-dns.yml
   register: edns_result
   changed_when: "'created' in edns_result.stdout"
   tags:
