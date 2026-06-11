@@ -45,13 +45,24 @@ jobs:
         run: make syntax-check
 
   wiki-sync:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Sync docs to GitHub Wiki
-        uses: DannyBen/wiki-sync-action@v1
-        with:
-          source: docs/
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          WIKI_DIR="${RUNNER_TEMP}/wiki"
+          git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" "$WIKI_DIR"
+          rm -rf "${WIKI_DIR:?}"/*
+          cp -r docs/* "$WIKI_DIR/"
+          cd "$WIKI_DIR"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to sync"
+          else
+            git commit -m "Sync docs from main repo [skip ci]"
+            git push
+          fi
