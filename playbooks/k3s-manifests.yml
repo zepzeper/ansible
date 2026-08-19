@@ -4,11 +4,15 @@
   become: yes
   gather_facts: yes
   roles:
-    - k8s-base
+    # Role-level tag so `make base` (--tags k8s-base) selects the whole role.
+    # The per-task tags inside it stay usable for narrower runs.
+    - role: k8s-base
+      tags: k8s-base
 
 - name: Deploy Kubernetes applications
   hosts: k3s_master
   become: yes
   gather_facts: yes
   roles:
-    - k8s-apps
+    - role: k8s-apps
+      tags: k8s-apps

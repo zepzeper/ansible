@@ -1,3 +1,10 @@
+# Managed by Ansible (roles/server). Edits on the host will be overwritten.
+#
+# This template is the single source of truth for the filter table. It used to
+# carry only the base rules, while roles/k3s appended its ports live and then
+# ran `iptables-save > rules.v4`. Re-running the server role rewrote the file
+# from this template and the restore handler applied it, silently closing 6443
+# and friends until the k3s role happened to run again.
 *filter
 :INPUT DROP [0:0]
 :FORWARD DROP [0:0]
@@ -17,5 +24,19 @@
 
 # Allow mDNS
 -A INPUT -p udp --dport 5353 -j ACCEPT
+{% if firewall_tcp_ports | length > 0 %}
+
+# Host-specific TCP ports
+{% for port in firewall_tcp_ports %}
+-A INPUT -p tcp --dport {{ port }} -j ACCEPT
+{% endfor %}
+{% endif %}
+{% if firewall_udp_ports | length > 0 %}
+
+# Host-specific UDP ports
+{% for port in firewall_udp_ports %}
+-A INPUT -p udp --dport {{ port }} -j ACCEPT
+{% endfor %}
+{% endif %}
 
 COMMIT

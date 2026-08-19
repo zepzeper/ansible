@@ -1,0 +1,3 @@
+---
+- name: restart pihole
+  command: kubectl -n pihole rollout restart deployment/pihole

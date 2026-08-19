@@ -33,6 +33,34 @@
     - k3s
     - kubernetes
 
+# The task above is a no-op once k3s exists, so a change to k3s_extra_flags would
+# otherwise never reach an already-installed server. Re-run the installer when the
+# unit's ExecStart no longer matches the flags we want.
+- name: Read the installed k3s unit file
+  ansible.builtin.slurp:
+    src: /etc/systemd/system/k3s.service
+  register: k3s_unit
+  failed_when: false
+  tags:
+    - k3s
+    - kubernetes
+
+- name: Reinstall k3s server when flags drifted
+  environment:
+    INSTALL_K3S_EXEC: "server {{ k3s_extra_flags }}"
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    K3S_TOKEN: "{{ vault_k3s_token }}"
+  shell: |
+    /usr/local/bin/k3s-install.sh
+  when:
+    - k3s_unit.content is defined
+    - k3s_extra_flags.split()
+      | reject('in', k3s_unit.content | b64decode)
+      | list | length > 0
+  tags:
+    - k3s
+    - kubernetes
+
 - name: Wait for k3s to be ready
   command: kubectl get nodes
   environment:

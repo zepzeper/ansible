@@ -1,0 +1,5 @@
+# Managed by Ansible (roles/server) - see the Resolver section in tasks/main.yml.
+nameserver {{ resolver_primary }}
+{% if resolver_fallback | length > 0 %}
+nameserver {{ resolver_fallback }}
+{% endif %}

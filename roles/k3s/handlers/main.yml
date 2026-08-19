@@ -3,3 +3,9 @@
   shell: |
     iptables-restore < /etc/iptables/rules.v4
     ip6tables-restore < /etc/iptables/rules.v6
+    # Same reason as the identical handler in roles/server: restoring the filter
+    # table deletes the ts-input/ts-forward chains tailscaled installs, after which the node
+    # drops everything arriving over the tailnet while still answering on the LAN.
+    if systemctl is-active --quiet tailscaled; then
+      systemctl restart tailscaled
+    fi

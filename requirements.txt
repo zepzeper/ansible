@@ -1,2 +1,6 @@
-ansible>=14,<15
+# ansible-core, not the `ansible` bundle. The bundle vendors ~100 collections
+# into site-packages; this repo uses exactly two, and both come from
+# requirements.yml. Carrying the bundle as well put every collection on the
+# search path twice and buried real output under ~100 duplicate warnings.
+ansible-core>=2.21,<2.22
 ansible-lint>=25,<27

@@ -74,6 +74,135 @@
   tags: firewall
 
 ###############################################################################
+# Resolver
+###############################################################################
+
+# Skipped entirely unless resolver_primary is set, so this cannot strand a host
+# that has no Pi-hole on its network.
+# Which manager owns /etc/resolv.conf is decided from the file itself rather
+# than from a systemd unit name: dhcpcd ships as dhcpcd.service on some releases
+# and dhcpcd5.service on others, and looking for the wrong one made this whole
+# section skip silently on ds10u.
+- name: Read the current resolv.conf
+  ansible.builtin.slurp:
+    src: /etc/resolv.conf
+  register: resolv_conf
+  failed_when: false
+  when: resolver_primary | length > 0
+  tags:
+    - dns
+    - resolver
+
+- name: Gather service facts
+  ansible.builtin.service_facts:
+  when: resolver_primary | length > 0
+  tags:
+    - dns
+    - resolver
+
+- name: Record which resolver manager owns resolv.conf
+  set_fact:
+    resolved_running: >-
+      {{ (ansible_facts.services['systemd-resolved.service'] | default({})).state
+         | default('') == 'running' }}
+    dhcpcd_owns_resolv: >-
+      {{ 'dhcpcd' in (resolv_conf.content | default('') | b64decode) }}
+  when: resolver_primary | length > 0
+  tags:
+    - dns
+    - resolver
+
+- name: Configure systemd-resolved to use Pi-hole
+  when:
+    - resolver_primary | length > 0
+    - resolved_running | bool
+  tags:
+    - dns
+    - resolver
+  block:
+    - name: Ensure systemd-resolved drop-in directory exists
+      file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        mode: "0755"
+
+    - name: Point systemd-resolved at Pi-hole
+      template:
+        src: resolved-pihole.conf.j2
+        dest: /etc/systemd/resolved.conf.d/99-pihole.conf
+        mode: "0644"
+      notify: restart systemd-resolved
+
+# dhcpcd splices resolv.conf.head verbatim into the resolv.conf it generates, so
+# that template stays terse on purpose - prose there ends up in the live file
+# that someone reads while debugging DNS at 2am. The reasoning instead:
+#
+# Pi-hole must be first for this host's own lookups, and devices using this
+# machine as a Tailscale exit node inherit its resolver (Tailscale runs a DNS
+# server on the exit node for its peers), so this is what filters ads for a
+# device away from home. The fallback exists because Pi-hole is a pod on this
+# same host: without it, a k3s outage leaves the machine unable to resolve
+# anything, images included.
+- name: Point dhcpcd at Pi-hole
+  template:
+    src: resolv.conf.head.j2
+    dest: /etc/resolv.conf.head
+    mode: "0644"
+  when:
+    - resolver_primary | length > 0
+    - dhcpcd_owns_resolv | bool
+    - not (resolved_running | bool)
+  notify: regenerate resolv.conf
+  tags:
+    - dns
+    - resolver
+
+- name: Keep dhcpcd off the tailscale interface
+  lineinfile:
+    path: /etc/dhcpcd.conf
+    regexp: '^denyinterfaces\s'
+    line: "denyinterfaces tailscale0"
+    backup: yes
+  when:
+    - resolver_primary | length > 0
+    - dhcpcd_owns_resolv | bool
+    - not (resolved_running | bool)
+  notify: regenerate resolv.conf
+  tags:
+    - dns
+    - resolver
+
+- name: Stop dhcpcd appending the router's nameservers
+  lineinfile:
+    path: /etc/dhcpcd.conf
+    regexp: '^option domain_name_servers,\s*'
+    line: "option domain_name, domain_search"
+    backup: yes
+  when:
+    - resolver_primary | length > 0
+    - resolver_exclusive | bool
+    - dhcpcd_owns_resolv | bool
+    - not (resolved_running | bool)
+  notify: regenerate resolv.conf
+  tags:
+    - dns
+    - resolver
+
+- name: Warn when no supported resolver manager was found
+  debug:
+    msg: >-
+      /etc/resolv.conf is managed by neither systemd-resolved nor dhcpcd, so the
+      Pi-hole resolver was not applied. Exit-node clients will not get Pi-hole
+      filtering until DNS on this host points at {{ resolver_primary }}.
+  when:
+    - resolver_primary | length > 0
+    - not (resolved_running | bool)
+    - not (dhcpcd_owns_resolv | bool)
+  tags:
+    - dns
+    - resolver
+
+###############################################################################
 # sysctl tuning (Kubernetes prerequisites)
 ###############################################################################
 

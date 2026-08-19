@@ -1,0 +1,15 @@
+# Managed by Ansible (roles/server). Edits on the host will be overwritten.
+#
+# Devices using this machine as a Tailscale exit node inherit this resolver -
+# Tailscale runs a DNS server on the exit node for its peers - so this is what
+# makes Pi-hole filter traffic for a device that is away from home.
+#
+# Pi-hole runs as a pod on this same host, so resolution depends on k3s being
+# up. FallbackDNS keeps the machine able to resolve if that ever breaks, at the
+# cost of a few queries bypassing the blocklist during an outage.
+[Resolve]
+DNS={{ resolver_primary }}
+{% if resolver_fallback | length > 0 %}
+FallbackDNS={{ resolver_fallback }}
+{% endif %}
+Domains=~.

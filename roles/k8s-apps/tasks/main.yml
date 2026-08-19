@@ -113,3 +113,31 @@
   tags:
     - apps
     - health
+
+###############################################################################
+# LAN split-horizon DNS
+###############################################################################
+
+# Read the hostnames back out of the cluster rather than keeping a second list
+# in sync by hand, so a newly added Ingress is picked up on the next run.
+- name: Collect Ingress hostnames
+  shell: |
+    set -o pipefail
+    kubectl get ingress -A \
+      -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{"\n"}{end}{end}' \
+      | grep -v '^$' | sort -u
+  register: ingress_hosts
+  changed_when: false
+  tags:
+    - apps
+    - dns
+
+- name: Write Pi-hole LAN overrides
+  template:
+    src: pihole-lan-dns.conf.j2
+    dest: /var/lib/pihole/dnsmasq/02-lan-split-horizon.conf
+    mode: "0644"
+  notify: restart pihole
+  tags:
+    - apps
+    - dns

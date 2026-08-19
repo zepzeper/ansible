@@ -66,22 +66,23 @@
     - namespaces
 
 - name: Apply cert-manager
-  shell: |
-    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
+  command: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
   register: cm_result
   changed_when: "'created' in cm_result.stdout"
-  failed_when: false
+  # First apply can race its own CRD establishment.
+  retries: 3
+  delay: 10
+  until: cm_result.rc == 0
   tags:
     - k8s
     - cert-manager
 
 - name: Wait for cert-manager to be ready
   shell: |
-    set -o pipefail
+    set -eo pipefail
     kubectl -n cert-manager wait --for=condition=Available deployment/cert-manager --timeout=180s
     kubectl -n cert-manager wait --for=condition=Available deployment/cert-manager-webhook --timeout=180s
   changed_when: false
-  failed_when: false
   tags:
     - k8s
     - cert-manager
@@ -118,39 +119,23 @@
     - k8s
     - cert-manager
 
-- name: Apply nginx-ingress
-  command: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
-  register: ing_result
-  changed_when: "'created' in ing_result.stdout"
-  failed_when: false
-  tags:
-    - k8s
-    - ingress
-
-- name: Wait for nginx-ingress controller to be ready
-  shell: |
-    kubectl -n ingress-nginx wait --for=condition=Available deployment/ingress-nginx-controller --timeout=180s
-  changed_when: false
-  failed_when: false
-  tags:
-    - k8s
-    - ingress
+# MetalLB must be installed and holding an address pool BEFORE nginx-ingress is
+# applied. nginx-ingress is a LoadBalancer service; with no LB controller present
+# it sits <pending> forever and never gets a status address for external-dns.
 
 - name: Apply MetalLB
-  shell: |
-    kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
+  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
   register: mlb_result
   changed_when: "'created' in mlb_result.stdout"
-  failed_when: false
   tags:
     - k8s
     - metallb
 
 - name: Wait for MetalLB to be ready
-  shell: |
-    kubectl -n metallb-system wait --for=condition=Available deployment/controller --timeout=180s
+  command: >
+    kubectl -n metallb-system wait --for=condition=Available
+    deployment/controller --timeout=180s
   changed_when: false
-  failed_when: false
   tags:
     - k8s
     - metallb
@@ -159,9 +144,100 @@
   command: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/metallb/ippool.yml
   register: ippool_result
   changed_when: "'created' in ippool_result.stdout"
+  # The MetalLB validating webhook can refuse connections for a few seconds
+  # after the controller reports Available.
+  retries: 6
+  delay: 10
+  until: ippool_result.rc == 0
   tags:
     - k8s
     - metallb
+
+- name: Apply nginx-ingress
+  command: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
+  register: ing_result
+  changed_when: "'created' in ing_result.stdout"
+  tags:
+    - k8s
+    - ingress
+
+# Without this the controller copies its own LoadBalancer IP (a 192.168.1.x LAN
+# address) into every Ingress .status, external-dns publishes that to Cloudflare,
+# and any client sitting on that same LAN bypasses Tailscale to reach it. Forcing
+# the status address to the master's Tailscale IP makes one address correct from
+# everywhere: over the tunnel when remote, over a direct LAN link when at home.
+- name: Publish the Tailscale address into every Ingress status
+  shell: |
+    set -euo pipefail
+    desired="--publish-status-address={{ ingress_status_address }}"
+    current=$(kubectl -n ingress-nginx get deployment ingress-nginx-controller \
+      -o jsonpath='{.spec.template.spec.containers[0].args}')
+    # --publish-service must be gone as well as the address being right:
+    # the controller exits on startup if both flags are present.
+    if printf '%s' "$current" | grep -qF -- "$desired" &&
+      ! printf '%s' "$current" | grep -qF -- "--publish-service="; then
+      echo UNCHANGED
+      exit 0
+    fi
+    new_args=$(kubectl -n ingress-nginx get deployment ingress-nginx-controller -o json \
+      | jq -c --arg d "$desired" \
+        '[.spec.template.spec.containers[0].args[]
+          | select(startswith("--publish-status-address=") | not)
+          | select(startswith("--publish-service=") | not)] + [$d]')
+    kubectl -n ingress-nginx patch deployment ingress-nginx-controller --type=json \
+      -p "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/args\",\"value\":$new_args}]"
+    echo PATCHED
+  register: ing_publish
+  changed_when: "'PATCHED' in ing_publish.stdout"
+  tags:
+    - k8s
+    - ingress
+
+# Pinned rather than left to MetalLB's first-free pick, so the Pi-hole LAN
+# overrides keep pointing at the right place across a reinstall.
+- name: Pin the ingress-nginx VIP to the MetalLB address
+  command: >
+    kubectl -n ingress-nginx annotate service ingress-nginx-controller
+    metallb.io/loadBalancerIPs={{ ingress_lan_address }} --overwrite
+  register: ing_vip
+  changed_when: "'annotated' in ing_vip.stdout"
+  tags:
+    - k8s
+    - ingress
+
+# The MetalLB VIP is announced by ARP, so it only ever answers on the LAN. But
+# every Ingress status now advertises the master's Tailscale address, and nothing
+# was listening on it - a tailnet client resolved a name and then hit a closed
+# port. externalIPs is the mechanism that closes that gap: kube-proxy DNATs
+# traffic destined for these addresses regardless of which interface it arrives
+# on, so the same Service answers on both the LAN VIP and the tailnet IP.
+- name: Serve the ingress on the Tailscale address as well
+  shell: |
+    set -euo pipefail
+    want="{{ ingress_status_address }}"
+    current=$(kubectl -n ingress-nginx get service ingress-nginx-controller \
+      -o jsonpath='{.spec.externalIPs}')
+    if printf '%s' "$current" | grep -qF -- "$want"; then
+      echo UNCHANGED
+      exit 0
+    fi
+    kubectl -n ingress-nginx patch service ingress-nginx-controller \
+      -p "{\"spec\":{\"externalIPs\":[\"$want\"]}}"
+    echo PATCHED
+  register: ing_extip
+  changed_when: "'PATCHED' in ing_extip.stdout"
+  tags:
+    - k8s
+    - ingress
+
+- name: Wait for nginx-ingress controller to roll out
+  command: >
+    kubectl -n ingress-nginx rollout status
+    deployment/ingress-nginx-controller --timeout=180s
+  changed_when: false
+  tags:
+    - k8s
+    - ingress
 
 - name: Apply external-dns
   command: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/external-dns/external-dns.yml

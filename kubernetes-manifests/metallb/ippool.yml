@@ -5,6 +5,10 @@ metadata:
   name: lan-pool
   namespace: metallb-system
 spec:
+  # Verified free on the LAN: the only occupants of .2-.20 are MetalLB's own
+  # VIPs (.2 pihole, .3 ingress-nginx). ds10u itself is .191 and the router is
+  # .254, so no node address falls inside the pool. Router DHCP leases observed
+  # start around .98 - keep this range excluded from the DHCP scope.
   addresses:
     - 192.168.1.2-192.168.1.20
 ---

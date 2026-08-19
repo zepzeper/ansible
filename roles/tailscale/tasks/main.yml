@@ -74,3 +74,18 @@
   tags:
     - networking
     - tailscale
+
+# `tailscale up` above only runs on a node that is not yet authenticated, so a
+# change to the advertised routes or the exit-node flag would never reach a
+# machine that is already on the tailnet. `tailscale set` applies them to a
+# running node without re-authenticating, and is idempotent.
+- name: Reconcile advertised routes and exit node
+  command: >
+    tailscale set
+    --advertise-routes={{ k3s_advertise_routes }}
+    --advertise-exit-node={{ tailscale_advertise_exit_node | default(true) | bool | lower }}
+  register: tailscale_set
+  changed_when: false
+  tags:
+    - networking
+    - tailscale

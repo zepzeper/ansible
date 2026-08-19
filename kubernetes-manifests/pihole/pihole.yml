@@ -26,6 +26,11 @@ spec:
               value: "8080"
             - name: FTLCONF_webserver_api_password
               value: changeme
+            # Pi-hole v6 ignores /etc/dnsmasq.d unless this is on, which makes
+            # the dnsmasq hostPath mount below inert by default. The LAN split-
+            # horizon overrides are written into that directory.
+            - name: FTLCONF_misc_etc_dnsmasq_d
+              value: "true"
           ports:
             - containerPort: 53
               protocol: TCP
@@ -51,9 +56,12 @@ kind: Service
 metadata:
   name: pihole
   namespace: pihole
+  annotations:
+    # spec.loadBalancerIP is deprecated since k8s 1.24; this is MetalLB's
+    # replacement for pinning the address.
+    metallb.io/loadBalancerIPs: 192.168.1.2
 spec:
   type: LoadBalancer
-  loadBalancerIP: 192.168.1.2
   selector:
     app: pihole
   ports:

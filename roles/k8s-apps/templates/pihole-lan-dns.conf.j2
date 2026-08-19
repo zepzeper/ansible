@@ -1,0 +1,12 @@
+# Managed by Ansible (roles/k8s-apps). Edits on the host will be overwritten.
+#
+# Public DNS answers these names with the master's Tailscale address, which is
+# reachable from anywhere but only by tailnet members. LAN clients that are not
+# on the tailnet get the ingress VIP from here instead.
+#
+# Leaf hostnames are listed individually on purpose: dnsmasq's address=/domain/
+# also matches the apex, and krugten.org itself is a GitHub Pages site that must
+# keep resolving to its public address.
+{% for host in ingress_hosts.stdout_lines | sort %}
+address=/{{ host }}/{{ ingress_lan_address }}
+{% endfor %}
