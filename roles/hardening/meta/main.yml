@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: hardening
+  author: zepzeper
+  description: SSH hardening, sysctl, swap, journald and unattended upgrades
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags: [system, security]
+
+dependencies: []

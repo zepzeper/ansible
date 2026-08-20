@@ -1,0 +1,105 @@
+---
+- name: Set hostname
+  hostname:
+    name: "{{ server_hostname }}"
+  when: manage_hostname | bool
+  tags:
+    - bootstrap
+
+- name: Update /etc/hosts
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1'
+    line: "127.0.1.1 {{ server_hostname }}"
+    state: present
+  when: manage_hostname | bool
+  tags:
+    - bootstrap
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+  tags:
+    - bootstrap
+
+- name: Install base packages
+  apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  tags:
+    - bootstrap
+
+- name: Generate en_US.UTF-8 locale
+  community.general.locale_gen:
+    name: "{{ locale }}"
+    state: present
+  tags:
+    - bootstrap
+
+- name: Generate extra locales
+  community.general.locale_gen:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ extra_locales }}"
+  tags:
+    - bootstrap
+
+- name: Set default locale
+  command: localectl set-locale LANG={{ locale }}
+  changed_when: false
+  tags:
+    - bootstrap
+
+- name: Create admin group
+  group:
+    name: "{{ admin_group }}"
+    state: present
+  tags:
+    - bootstrap
+    - identity
+
+- name: Create admin user
+  user:
+    name: "{{ admin_username }}"
+    group: "{{ admin_group }}"
+    groups: sudo
+    append: yes
+    shell: "{{ admin_shell }}"
+    createhome: yes
+    state: present
+  tags:
+    - bootstrap
+    - identity
+
+- name: Set authorized keys for admin user
+  ansible.posix.authorized_key:
+    user: "{{ admin_username }}"
+    key: "{{ item }}"
+    state: present
+  loop: "{{ admin_ssh_keys }}"
+  tags:
+    - bootstrap
+    - identity
+
+- name: Configure sudo for admin group without password
+  copy:
+    content: "%{{ admin_group }} ALL=(ALL) NOPASSWD: ALL\n"
+    dest: "/etc/sudoers.d/{{ admin_group }}"
+    mode: "0440"
+    validate: "visudo -cf %s"
+  tags:
+    - bootstrap
+    - identity
+
+- name: Disable root SSH login
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^PermitRootLogin"
+    line: "PermitRootLogin no"
+    state: present
+  notify: restart sshd
+  tags:
+    - configure
+    - ssh

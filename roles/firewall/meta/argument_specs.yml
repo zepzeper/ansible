@@ -1,0 +1,22 @@
+---
+argument_specs:
+  main:
+    short_description: Renders and persists the whole iptables filter table
+    description:
+      - The only role permitted to write iptables. Other roles open ports by
+        contributing to firewall_tcp_ports and firewall_udp_ports rather than
+        adding rules themselves.
+      - This matters because two writers previously fought over one file - k3s
+        appended its ports and persisted them with iptables-save, and the next
+        run of the templating role overwrote them, silently closing 6443.
+    options:
+      firewall_tcp_ports:
+        type: list
+        elements: int
+        default: []
+        description: TCP ports accepted on INPUT, on top of the base ruleset.
+      firewall_udp_ports:
+        type: list
+        elements: int
+        default: []
+        description: UDP ports accepted on INPUT, on top of the base ruleset.

@@ -1,0 +1,163 @@
+---
+- name: Install server packages
+  apt:
+    name: "{{ server_packages }}"
+    state: present
+  tags:
+    - bootstrap
+
+- name: Harden SSH - disable password auth
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PasswordAuthentication"
+    line: "PasswordAuthentication no"
+    state: present
+  notify: restart sshd
+  tags:
+    - configure
+    - ssh
+
+- name: Harden SSH - enable pubkey auth
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?PubkeyAuthentication"
+    line: "PubkeyAuthentication yes"
+    state: present
+  notify: restart sshd
+  tags:
+    - configure
+    - ssh
+
+- name: Harden SSH - disable challenge-response
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^#?ChallengeResponseAuthentication"
+    line: "ChallengeResponseAuthentication no"
+    state: present
+  notify: restart sshd
+  tags:
+    - configure
+    - ssh
+
+###############################################################################
+# sysctl tuning (Kubernetes prerequisites)
+###############################################################################
+
+- name: Configure sysctl for Kubernetes
+  template:
+    src: 99-kubernetes.conf.j2
+    dest: /etc/sysctl.d/99-kubernetes.conf
+    mode: "0644"
+  tags:
+    - configure
+    - system
+
+- name: Apply sysctl settings
+  command: sysctl --system
+  changed_when: false
+  tags:
+    - configure
+    - system
+
+- name: Load kernel module for bridge filtering
+  community.general.modprobe:
+    name: br_netfilter
+    state: present
+  when: manage_kernel_modules | bool
+  tags:
+    - configure
+    - system
+
+###############################################################################
+# Disable swap (required for kubelet)
+###############################################################################
+
+- name: Disable swap immediately
+  command: swapoff -a
+  changed_when: false
+  when:
+    - manage_swap | bool
+    - ansible_facts['swaptotal_mb'] > 0
+  tags:
+    - configure
+    - system
+
+- name: Remove swap from fstab
+  ansible.posix.mount:
+    name: "{{ item }}"
+    fstype: swap
+    state: absent
+  loop: "{{ ansible_facts['mounts'] | selectattr('fstype', 'equalto', 'swap') | map(attribute='mount') | list }}"
+  when:
+    - manage_swap | bool
+    - ansible_facts['mounts'] | selectattr('fstype', 'equalto', 'swap') | list | length > 0
+  tags:
+    - configure
+    - system
+
+###############################################################################
+# Journald log limits
+###############################################################################
+
+- name: Configure journald log limits
+  template:
+    src: journald.conf.j2
+    dest: /etc/systemd/journald.conf
+    mode: "0644"
+  notify: restart journald
+  tags:
+    - configure
+    - system
+
+###############################################################################
+# Unattended-upgrades (security updates only)
+###############################################################################
+
+- name: Install unattended-upgrades
+  apt:
+    name: unattended-upgrades
+    state: present
+  tags:
+    - configure
+    - system
+
+- name: Deploy unattended-upgrades config
+  template:
+    src: 50-unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50-unattended-upgrades
+    mode: "0644"
+  tags:
+    - configure
+    - system
+
+- name: Enable periodic unattended-upgrades
+  copy:
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Download-Upgradeable-Packages "1";
+      APT::Periodic::AutocleanInterval "7";
+      APT::Periodic::Unattended-Upgrade "1";
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+  tags:
+    - configure
+    - system
+
+###############################################################################
+# Disable unwanted services
+###############################################################################
+
+- name: Disable unwanted services
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+    masked: yes
+  failed_when: false
+  loop:
+    - bluetooth
+    - pipewire
+    - pipewire-pulse
+    - wireplumber
+  tags:
+    - bootstrap

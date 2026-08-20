@@ -1,0 +1,23 @@
+---
+- name: restart systemd-resolved
+  systemd:
+    name: systemd-resolved
+    state: restarted
+
+# Rebind rather than restart, so an Ansible run over SSH on that same interface
+# does not cut itself off. dhcpcd lives in sbin, which is not on a login PATH,
+# hence the absolute path. `|| true` because a rebind is best-effort: the file
+# is in place either way and dhcpcd will pick it up on the next lease event.
+- name: regenerate resolv.conf
+  ansible.builtin.shell: |
+    for d in /usr/sbin/dhcpcd /sbin/dhcpcd; do
+      [ -x "$d" ] && "$d" -n && break
+    done || true
+    # A rebind strips the address off tailscale0 and the node falls off the
+    # tailnet while still answering on the LAN. denyinterfaces in dhcpcd.conf
+    # does not prevent it, so repair it here rather than leave the host
+    # half-reachable. Cheap, and a no-op when tailscaled is not installed.
+    if systemctl is-active --quiet tailscaled; then
+      systemctl restart tailscaled
+    fi
+  changed_when: true

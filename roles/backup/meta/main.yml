@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: backup
+  author: zepzeper
+  description: restic backups on a systemd timer
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags: [system, backup]
+
+dependencies: []

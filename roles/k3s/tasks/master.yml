@@ -8,8 +8,8 @@
     state: present
     update_cache: yes
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
 - name: Download k3s install script
   get_url:
@@ -17,8 +17,8 @@
     dest: /usr/local/bin/k3s-install.sh
     mode: "0755"
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
 - name: Install k3s server
   environment:
@@ -30,8 +30,8 @@
   args:
     creates: /usr/local/bin/k3s
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
 # The task above is a no-op once k3s exists, so a change to k3s_extra_flags would
 # otherwise never reach an already-installed server. Re-run the installer when the
@@ -42,8 +42,8 @@
   register: k3s_unit
   failed_when: false
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
 - name: Reinstall k3s server when flags drifted
   environment:
@@ -58,8 +58,8 @@
       | reject('in', k3s_unit.content | b64decode)
       | list | length > 0
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
 - name: Wait for k3s to be ready
   command: kubectl get nodes
@@ -71,8 +71,8 @@
   until: k3s_status.rc == 0
   changed_when: false
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
 - name: Install k3s CLI tools
   apt:
@@ -80,43 +80,14 @@
     state: present
   when: k3s_packages | length > 0
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
-- name: Allow k3s master TCP ports
-  ansible.builtin.iptables:
-    chain: INPUT
-    protocol: tcp
-    destination_port: "{{ item }}"
-    jump: ACCEPT
-    state: present
-  loop: "{{ k3s_master_tcp_ports }}"
-  register: k3s_iptables_tcp_rules
-  notify: restore iptables
-  tags:
-    - k3s
-    - firewall
-
-- name: Allow k3s master UDP ports
-  ansible.builtin.iptables:
-    chain: INPUT
-    protocol: udp
-    destination_port: "{{ item }}"
-    jump: ACCEPT
-    state: present
-  loop: "{{ k3s_master_udp_ports }}"
-  register: k3s_iptables_udp_rules
-  notify: restore iptables
-  tags:
-    - k3s
-    - firewall
-
-- name: Persist iptables rules
-  shell: iptables-save > /etc/iptables/rules.v4
-  when: k3s_iptables_tcp_rules is changed or k3s_iptables_udp_rules is changed
-  tags:
-    - k3s
-    - firewall
+# Firewall rules deliberately live in roles/firewall, which is the sole owner
+# of the filter table. This role used to append its ports with the iptables
+# module and persist them with iptables-save; roles/server then re-rendered
+# the file from its template on the next run and silently closed 6443.
+# The ports are declared as firewall_tcp_ports / firewall_udp_ports instead.
 
 - name: Create .kube directory for admin user
   file:
@@ -126,8 +97,8 @@
     group: "{{ admin_group }}"
     mode: "0755"
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
 - name: Copy kubeconfig to admin user
   copy:
@@ -139,5 +110,5 @@
     remote_src: yes
   become: yes
   tags:
+    - deploy
     - k3s
-    - kubernetes

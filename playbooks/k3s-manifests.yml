@@ -1,11 +1,16 @@
 ---
+# k3s writes its kubeconfig to /etc/rancher/k3s/k3s.yaml, and these plays run as
+# root, whose ~/.kube/config does not exist. Setting it once for the whole
+# kubernetes.core action group beats repeating it on every task and beats the
+# old approach of exporting KUBECONFIG around kubectl shell-outs.
 - name: Deploy Kubernetes infrastructure
   hosts: k3s_master
   become: yes
   gather_facts: yes
+  module_defaults:
+    group/kubernetes.core.k8s:
+      kubeconfig: "{{ k8s_kubeconfig }}"
   roles:
-    # Role-level tag so `make base` (--tags k8s-base) selects the whole role.
-    # The per-task tags inside it stay usable for narrower runs.
     - role: k8s-base
       tags: k8s-base
 
@@ -13,6 +18,9 @@
   hosts: k3s_master
   become: yes
   gather_facts: yes
+  module_defaults:
+    group/kubernetes.core.k8s:
+      kubeconfig: "{{ k8s_kubeconfig }}"
   roles:
     - role: k8s-apps
       tags: k8s-apps

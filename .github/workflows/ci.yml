@@ -49,6 +49,65 @@ jobs:
           ANSIBLE_PLAYBOOK: ansible-playbook
         run: make syntax-check
 
+  converge:
+    name: Converge + idempotence (staging container)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          ansible-galaxy collection install -r requirements.yml
+
+      # No vault password: the staging inventory carries its own non-secret
+      # stand-ins, so this job needs nothing privileged to run.
+      - name: Converge, then prove idempotence
+        env:
+          ANSIBLE_PLAYBOOK: ansible-playbook
+          ANSIBLE_FORCE_COLOR: "1"
+        run: make idempotence
+
+      - name: Tear down
+        if: always()
+        run: make staging-down
+
+  tags:
+    name: Every Makefile target selects at least one task
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          ansible-galaxy collection install -r requirements.yml
+
+      # `make base` and `make apps` once filtered on tags that existed nowhere.
+      # Both ran zero tasks and exited 0, which is indistinguishable from success.
+      - name: Assert no tag selects an empty task list
+        env:
+          ANSIBLE_VAULT_PASSWORD: dummy
+        run: ./scripts/check-tags.sh
+
+      # prod's group_vars carried its own base_packages, and that copy had lost
+      # openssh-server. group_vars outranks role defaults, so the role's correct
+      # list was masked and nothing failed loudly.
+      - name: Assert no inventory value restates or truncates a role default
+        env:
+          PY: python
+        run: ./scripts/check-var-drift.sh
+
   wiki-sync:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest

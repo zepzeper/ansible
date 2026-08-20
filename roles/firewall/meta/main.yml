@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: firewall
+  author: zepzeper
+  description: Sole owner of the iptables filter table
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags: [system, networking, security]
+
+dependencies: []

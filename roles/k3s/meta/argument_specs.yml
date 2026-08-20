@@ -1,0 +1,30 @@
+---
+argument_specs:
+  main:
+    short_description: Installs and reconciles a k3s server or agent
+    description:
+      - Opens no ports. Firewall rules belong to roles/firewall; this role
+        surfaces the ports it needs as firewall_tcp_ports / firewall_udp_ports.
+    options:
+      k3s_role:
+        type: str
+        required: true
+        choices: [server, agent]
+      k3s_version:
+        type: str
+        description: INSTALL_K3S_VERSION pin.
+      k3s_extra_flags:
+        type: str
+        default: ""
+        description:
+          - Flags appended to the install. Changing these reaches an existing
+            install because the role compares them against the unit file and
+            re-runs the installer on drift; the plain install task is a no-op
+            once /usr/local/bin/k3s exists.
+      vault_k3s_token:
+        type: str
+        required: true
+      k3s_packages:
+        type: list
+        elements: str
+        default: []

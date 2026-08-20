@@ -1,0 +1,19 @@
+---
+argument_specs:
+  main:
+    short_description: Scheduled restic backups
+    options:
+      restic_repo:
+        type: str
+        required: true
+      backup_dir:
+        type: list
+        elements: str
+        description: Paths included in the snapshot.
+      backup_user:
+        type: str
+      backup_group:
+        type: str
+      backup_schedule:
+        type: str
+        description: systemd OnCalendar expression.

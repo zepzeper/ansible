@@ -1,0 +1,10 @@
+---
+# Empty leaves whatever DHCP provided, so a host on a network without Pi-hole is
+# unaffected and the whole role skips.
+resolver_primary: ""
+resolver_fallback: ""
+
+# When true, stop the DHCP client appending the nameservers the router hands
+# out, so resolv.conf holds only resolver_primary/resolver_fallback. glibc reads
+# at most MAXNS (3) servers, so a router-supplied duplicate wastes a slot.
+resolver_exclusive: false

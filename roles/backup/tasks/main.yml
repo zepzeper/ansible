@@ -2,20 +2,26 @@
 - name: Stop here if backups are disabled
   meta: end_play
   when: not backup_enabled
-  tags: backup
+  tags:
+    - configure
+    - backup
 
 - name: Ensure backup directory exists
   file:
     path: "{{ backup_dir }}"
     state: directory
     mode: "0755"
-  tags: backup
+  tags:
+    - configure
+    - backup
 
 - name: Install restic
   apt:
     name: restic
     state: present
-  tags: backup
+  tags:
+    - configure
+    - backup
 
 - name: Initialize restic repository
   command: restic init --insecure-no-password
@@ -23,14 +29,18 @@
     creates: "{{ restic_repo }}/config"
   environment:
     RESTIC_REPOSITORY: "{{ restic_repo }}"
-  tags: backup
+  tags:
+    - configure
+    - backup
 
 - name: Deploy backup script
   template:
     src: restic-backup.sh.j2
     dest: "{{ backup_dir }}/restic-backup.sh"
     mode: "0755"
-  tags: backup
+  tags:
+    - configure
+    - backup
 
 - name: Deploy systemd service unit
   template:
@@ -38,7 +48,9 @@
     dest: /etc/systemd/system/restic-backup.service
     mode: "0644"
   notify: reload systemd
-  tags: backup
+  tags:
+    - configure
+    - backup
 
 - name: Deploy systemd timer unit
   template:
@@ -46,7 +58,9 @@
     dest: /etc/systemd/system/restic-backup.timer
     mode: "0644"
   notify: reload systemd
-  tags: backup
+  tags:
+    - configure
+    - backup
 
 - name: Enable and start backup timer
   systemd:
@@ -54,4 +68,6 @@
     enabled: yes
     state: started
     daemon_reload: yes
-  tags: backup
+  tags:
+    - configure
+    - backup

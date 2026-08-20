@@ -1,0 +1,52 @@
+---
+argument_specs:
+  main:
+    short_description: Machine identity, admin users, locale and base packages
+    description:
+      - Everything that makes a fresh Debian box recognisable and usable.
+      - Deliberately free of policy - hardening, firewall and DNS live in their
+        own roles so each can be applied, tested and reasoned about alone.
+    options:
+      server_hostname:
+        type: str
+        required: true
+        description: Hostname to set, and the name written to /etc/hosts.
+      admin_username:
+        type: str
+        default: admin
+        description: Unprivileged account created and granted passwordless sudo.
+      admin_group:
+        type: str
+        default: admin
+        description: Primary group for the admin account, also the sudoers group.
+      admin_shell:
+        type: str
+        default: /bin/bash
+      admin_ssh_keys:
+        type: list
+        elements: str
+        default: []
+        description: Public keys authorised for the admin account.
+      base_packages:
+        type: list
+        elements: str
+        description:
+          - Packages every host gets. Must include locales and openssh-server -
+            the locale and SSH tasks in this role and in hardening depend on
+            files those packages provide.
+      locale:
+        type: str
+        default: en_US.UTF-8
+      extra_locales:
+        type: list
+        elements: str
+        default: []
+      timezone:
+        type: str
+        default: UTC
+      manage_hostname:
+        type: bool
+        default: true
+        description:
+          - Set false where /etc/hostname is not writable, such as a container
+            with the file bind-mounted by the runtime.

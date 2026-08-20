@@ -1,0 +1,33 @@
+---
+# Where k3s writes its kubeconfig. These roles run as root, whose ~/.kube/config
+# does not exist.
+k8s_kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+# Root of the Kustomize tree this role applies. Relative to the playbook, and
+# resolved on the control node by the kustomize lookup - so the tree does not
+# need to be copied to the target at all, which is why the old synchronize task
+# is gone.
+k8s_tree: "{{ playbook_dir }}/../k8s"
+
+# Upstream components pinned by URL. Fetched to disk and applied with the module
+# so a download failure is distinguishable from an apply failure.
+k8s_upstream_components:
+  - name: cert-manager
+    url: https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
+  - name: metallb
+    url: https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
+  - name: ingress-nginx
+    url: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
+
+k8s_cloudflare_secret_namespaces:
+  - cert-manager
+  - external-dns
+  - home-assistant
+  - pihole
+  - tuliprox
+  - homepage
+  - mealie
+  - kuma
+  - books
+  - media
+  - paperless

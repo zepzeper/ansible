@@ -1,0 +1,5 @@
+---
+# Every port opened on this host, in one place. Roles that need a port declare it
+# through these rather than touching iptables themselves.
+firewall_tcp_ports: []
+firewall_udp_ports: []

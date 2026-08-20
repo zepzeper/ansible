@@ -1,9 +1,33 @@
 ---
+# Ansible applies the Kustomize tree in k8s/ with kubernetes.core.k8s rather than
+# shelling out to kubectl. The module compares desired against live state, so it
+# reports change honestly instead of relying on grep guards, and server-side
+# apply resolves field ownership rather than clobbering.
+#
+# Ordering is explicit because three upstream components install their own CRDs
+# that later resources depend on. That is the one thing a task sequence still has
+# to get right by hand.
+
+# kubernetes.core.k8s executes on the target and needs the client library there.
+# The old kubectl shell-outs did not, so this is a new prerequisite - and without
+# it every task in this role fails on the first run.
+- name: Install the Kubernetes client library
+  apt:
+    name:
+      - python3-kubernetes
+      - python3-yaml
+    state: present
+  tags:
+    - deploy
+    - cluster
+
 - name: Fix kubeconfig permissions
   file:
     path: /etc/rancher/k3s/k3s.yaml
     mode: "0644"
-  tags: k8s
+  tags:
+    - deploy
+    - cluster
 
 - name: Copy kubeconfig to admin user
   copy:
@@ -13,16 +37,9 @@
     group: "{{ admin_group }}"
     mode: "0600"
     remote_src: yes
-  tags: k8s
-
-- name: Copy Kubernetes manifests to target host
-  ansible.posix.synchronize:
-    src: "{{ playbook_dir }}/../kubernetes-manifests/"
-    dest: "/home/{{ admin_username }}/kubernetes-manifests/"
-    delete: yes
   tags:
-    - k8s
-    - manifests
+    - deploy
+    - cluster
 
 - name: Create data directories for hostPath volumes
   file:
@@ -39,141 +56,196 @@
     - /var/lib/tuliprox/config
     - /run/secrets/rendered
   tags:
-    - k8s
-    - storage
+    - deploy
+    - cluster
 
-- name: Create all required namespaces
-  shell: |
-    set -o pipefail
-    kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
-  changed_when: false
-  loop:
-    - cert-manager
-    - home-assistant
-    - vaultwarden
-    - pihole
-    - homepage
-    - mealie
-    - kuma
-    - tuliprox
-    - metallb-system
-    - external-dns
-    - books
-    - media
-    - paperless
+# Namespaces first: the upstream installs below and the secrets after them all
+# land in namespaces this creates.
+- name: Apply namespaces
+  kubernetes.core.k8s:
+    definition: "{{ lookup('kubernetes.core.kustomize', dir=k8s_tree + '/infrastructure/namespaces') }}"
+    apply: true
+    state: present
   tags:
-    - k8s
+    - deploy
+    - cluster
     - namespaces
 
-- name: Apply cert-manager
-  command: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
-  register: cm_result
-  changed_when: "'created' in cm_result.stdout"
-  # First apply can race its own CRD establishment.
-  retries: 3
-  delay: 10
-  until: cm_result.rc == 0
+###############################################################################
+# Upstream components
+#
+# Fetched to disk and applied with the module rather than `kubectl apply -f URL`,
+# so a failed download is distinguishable from a failed apply and the result is
+# reported as a real change.
+###############################################################################
+
+- name: Ensure the upstream manifest cache exists
+  file:
+    path: /opt/k8s-upstream
+    state: directory
+    mode: "0755"
+  # Runs under --check too. Creating an empty directory changes nothing
+  # observable, and without it every later task in this role is unverifiable in
+  # a dry run - the fetch has nowhere to write and the applies never execute.
+  check_mode: false
   tags:
-    - k8s
-    - cert-manager
+    - deploy
+    - cluster
+
+- name: Fetch upstream component manifests
+  get_url:
+    url: "{{ item.url }}"
+    dest: "/opt/k8s-upstream/{{ item.name }}.yaml"
+    mode: "0644"
+  loop: "{{ k8s_upstream_components }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: upstream_fetch
+  retries: 3
+  delay: 5
+  until: upstream_fetch is succeeded
+  # Also runs under --check. Downloading pinned upstream YAML into a cache
+  # changes nothing about the running system, and it is what lets the applies
+  # below produce a real diff in a dry run instead of failing on a missing file.
+  check_mode: false
+  tags:
+    - deploy
+    - cluster
+
+- name: Apply cert-manager
+  kubernetes.core.k8s:
+    src: /opt/k8s-upstream/cert-manager.yaml
+    apply: true
+    state: present
+    server_side_apply:
+      field_manager: ansible
+      force_conflicts: true
+  tags:
+    - deploy
+    - certs
 
 - name: Wait for cert-manager to be ready
-  shell: |
-    set -eo pipefail
-    kubectl -n cert-manager wait --for=condition=Available deployment/cert-manager --timeout=180s
-    kubectl -n cert-manager wait --for=condition=Available deployment/cert-manager-webhook --timeout=180s
-  changed_when: false
-  tags:
-    - k8s
-    - cert-manager
-
-- name: Create Cloudflare API token secrets
-  shell: |
-    set -o pipefail
-    kubectl create secret generic cloudflare-api-token \
-      --namespace={{ item }} \
-      --from-literal=api-token={{ vault_cloudflare_api_token }} \
-      --dry-run=client -o yaml | kubectl apply -f -
-  changed_when: false
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: cert-manager
+    name: "{{ item }}"
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 180
   loop:
     - cert-manager
-    - external-dns
-    - home-assistant
-    - pihole
-    - tuliprox
-    - homepage
-    - mealie
-    - kuma
-    - books
-    - media
-    - paperless
+    - cert-manager-webhook
   tags:
-    - k8s
-    - secrets
+    - deploy
+    - certs
 
-- name: Apply ClusterIssuer
-  command: kubectl apply -f "/home/{{ admin_username }}/kubernetes-manifests/cert-manager/cluster-issuer.yml"
-  register: ci_result
-  changed_when: "'created' in ci_result.stdout"
-  tags:
-    - k8s
-    - cert-manager
-
-# MetalLB must be installed and holding an address pool BEFORE nginx-ingress is
-# applied. nginx-ingress is a LoadBalancer service; with no LB controller present
-# it sits <pending> forever and never gets a status address for external-dns.
-
+# MetalLB before ingress-nginx, which is a LoadBalancer service: with no address
+# pool present it sits <pending> indefinitely and never reports a status address.
 - name: Apply MetalLB
-  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
-  register: mlb_result
-  changed_when: "'created' in mlb_result.stdout"
+  kubernetes.core.k8s:
+    src: /opt/k8s-upstream/metallb.yaml
+    apply: true
+    state: present
+    server_side_apply:
+      field_manager: ansible
+      force_conflicts: true
   tags:
-    - k8s
-    - metallb
+    - deploy
+    - loadbalancer
 
 - name: Wait for MetalLB to be ready
-  command: >
-    kubectl -n metallb-system wait --for=condition=Available
-    deployment/controller --timeout=180s
-  changed_when: false
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: metallb-system
+    name: controller
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 180
   tags:
-    - k8s
-    - metallb
-
-- name: Apply MetalLB IPPool
-  command: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/metallb/ippool.yml
-  register: ippool_result
-  changed_when: "'created' in ippool_result.stdout"
-  # The MetalLB validating webhook can refuse connections for a few seconds
-  # after the controller reports Available.
-  retries: 6
-  delay: 10
-  until: ippool_result.rc == 0
-  tags:
-    - k8s
-    - metallb
+    - deploy
+    - loadbalancer
 
 - name: Apply nginx-ingress
-  command: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
-  register: ing_result
-  changed_when: "'created' in ing_result.stdout"
+  kubernetes.core.k8s:
+    src: /opt/k8s-upstream/ingress-nginx.yaml
+    apply: true
+    state: present
+    server_side_apply:
+      field_manager: ansible
+      force_conflicts: true
   tags:
-    - k8s
+    - deploy
     - ingress
 
-# Without this the controller copies its own LoadBalancer IP (a 192.168.1.x LAN
-# address) into every Ingress .status, external-dns publishes that to Cloudflare,
-# and any client sitting on that same LAN bypasses Tailscale to reach it. Forcing
-# the status address to the master's Tailscale IP makes one address correct from
-# everywhere: over the tunnel when remote, over a direct LAN link when at home.
+###############################################################################
+# Secrets
+###############################################################################
+
+- name: Create Cloudflare API token secrets
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: cloudflare-api-token
+        namespace: "{{ item }}"
+      stringData:
+        api-token: "{{ vault_cloudflare_api_token }}"
+  loop: "{{ k8s_cloudflare_secret_namespaces }}"
+  # Without this the token is printed in task output on failure and under -v.
+  no_log: true
+  tags:
+    - deploy
+    - secrets
+
+###############################################################################
+# Cluster infrastructure from the Kustomize tree
+#
+# Applied after the upstream components because ClusterIssuer needs cert-manager
+# CRDs and IPAddressPool needs MetalLB's, both of which arrive above.
+###############################################################################
+
+- name: Apply cluster infrastructure
+  kubernetes.core.k8s:
+    definition: "{{ lookup('kubernetes.core.kustomize', dir=k8s_tree + '/infrastructure') }}"
+    apply: true
+    state: present
+    server_side_apply:
+      field_manager: ansible
+      force_conflicts: true
+  # The MetalLB validating webhook can refuse connections for a few seconds after
+  # its controller reports Available.
+  register: infra_apply
+  retries: 6
+  delay: 10
+  until: infra_apply is succeeded
+  tags:
+    - deploy
+    - cluster
+
+###############################################################################
+# ingress-nginx patches
+#
+# These modify objects the upstream manifest owns, so they run after it is
+# applied rather than being Kustomize patches over a remote base - a remote base
+# would make `kustomize build` require network access, including in CI.
+###############################################################################
+
+# Without this the controller copies its own LoadBalancer IP (a LAN address) into
+# every Ingress status, external-dns publishes that, and any client on that LAN
+# bypasses Tailscale to reach it. --publish-service and --publish-status-address
+# are mutually exclusive; the controller exits at startup if both are set.
 - name: Publish the Tailscale address into every Ingress status
   shell: |
     set -euo pipefail
     desired="--publish-status-address={{ ingress_status_address }}"
     current=$(kubectl -n ingress-nginx get deployment ingress-nginx-controller \
       -o jsonpath='{.spec.template.spec.containers[0].args}')
-    # --publish-service must be gone as well as the address being right:
-    # the controller exits on startup if both flags are present.
     if printf '%s' "$current" | grep -qF -- "$desired" &&
       ! printf '%s' "$current" | grep -qF -- "--publish-service="; then
       echo UNCHANGED
@@ -190,59 +262,40 @@
   register: ing_publish
   changed_when: "'PATCHED' in ing_publish.stdout"
   tags:
-    - k8s
+    - deploy
     - ingress
 
-# Pinned rather than left to MetalLB's first-free pick, so the Pi-hole LAN
-# overrides keep pointing at the right place across a reinstall.
-- name: Pin the ingress-nginx VIP to the MetalLB address
-  command: >
-    kubectl -n ingress-nginx annotate service ingress-nginx-controller
-    metallb.io/loadBalancerIPs={{ ingress_lan_address }} --overwrite
-  register: ing_vip
-  changed_when: "'annotated' in ing_vip.stdout"
+- name: Pin the ingress-nginx VIP and serve it on the Tailscale address
+  kubernetes.core.k8s:
+    state: patched
+    kind: Service
+    name: ingress-nginx-controller
+    namespace: ingress-nginx
+    definition:
+      metadata:
+        annotations:
+          metallb.io/loadBalancerIPs: "{{ ingress_lan_address }}"
+      spec:
+        # The MetalLB VIP is announced by ARP and answers only on the LAN. Every
+        # Ingress status advertises the Tailscale address, so kube-proxy has to
+        # accept traffic for it too or tailnet clients resolve a name and then
+        # hit a closed port.
+        externalIPs:
+          - "{{ ingress_status_address }}"
   tags:
-    - k8s
-    - ingress
-
-# The MetalLB VIP is announced by ARP, so it only ever answers on the LAN. But
-# every Ingress status now advertises the master's Tailscale address, and nothing
-# was listening on it - a tailnet client resolved a name and then hit a closed
-# port. externalIPs is the mechanism that closes that gap: kube-proxy DNATs
-# traffic destined for these addresses regardless of which interface it arrives
-# on, so the same Service answers on both the LAN VIP and the tailnet IP.
-- name: Serve the ingress on the Tailscale address as well
-  shell: |
-    set -euo pipefail
-    want="{{ ingress_status_address }}"
-    current=$(kubectl -n ingress-nginx get service ingress-nginx-controller \
-      -o jsonpath='{.spec.externalIPs}')
-    if printf '%s' "$current" | grep -qF -- "$want"; then
-      echo UNCHANGED
-      exit 0
-    fi
-    kubectl -n ingress-nginx patch service ingress-nginx-controller \
-      -p "{\"spec\":{\"externalIPs\":[\"$want\"]}}"
-    echo PATCHED
-  register: ing_extip
-  changed_when: "'PATCHED' in ing_extip.stdout"
-  tags:
-    - k8s
+    - deploy
     - ingress
 
 - name: Wait for nginx-ingress controller to roll out
-  command: >
-    kubectl -n ingress-nginx rollout status
-    deployment/ingress-nginx-controller --timeout=180s
-  changed_when: false
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: ingress-nginx
+    name: ingress-nginx-controller
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 180
   tags:
-    - k8s
+    - deploy
     - ingress
-
-- name: Apply external-dns
-  command: kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/external-dns/external-dns.yml
-  register: edns_result
-  changed_when: "'created' in edns_result.stdout"
-  tags:
-    - k8s
-    - dns

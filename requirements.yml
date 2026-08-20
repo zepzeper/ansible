@@ -3,3 +3,8 @@
 collections:
   - name: ansible.posix
   - name: community.general
+  # Connection plugin for the staging container, so CI needs no sshd or keys.
+  - name: community.docker
+  # Declarative cluster management, replacing 22 kubectl shell-outs. Provides
+  # both the k8s module and the kustomize lookup.
+  - name: kubernetes.core

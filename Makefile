@@ -1,4 +1,5 @@
-.PHONY: help setup lint syntax-check \
+.PHONY: help setup lint syntax-check consistency \
+        staging-up staging-down converge idempotence check \
         deploy bootstrap k3s manifests base apps \
         backup backup-run \
         tag ping facts clean
@@ -18,8 +19,27 @@ setup: ## Install control node dependencies
 	pip3 install -r requirements.txt
 	$(ANSIBLE_GALAXY) collection install -r requirements.yml
 
+consistency: ## Assert tags resolve and no inventory value duplicates a role default
+	./scripts/check-tags.sh
+	./scripts/check-var-drift.sh
+
 lint: ## Run ansible-lint on all playbooks and roles
 	$(ANSIBLE_LINT)
+
+check: ## Dry-run against production, showing diffs, changing nothing
+	$(ANSIBLE_PLAYBOOK) $(if $(LIMIT),--limit $(LIMIT)) playbooks/deploy-all.yml --check --diff $(ANSIBLE_ARGS)
+
+staging-up: ## Start the throwaway staging container
+	./scripts/staging-container.sh up
+
+staging-down: ## Destroy the staging container
+	./scripts/staging-container.sh down
+
+converge: staging-up ## Run the host-level play against staging
+	$(ANSIBLE_PLAYBOOK) -i inventories/staging/hosts.yml playbooks/bootstrap.yml $(ANSIBLE_ARGS)
+
+idempotence: ## Converge staging twice; fail if the second run changes anything
+	./scripts/idempotence.sh
 
 syntax-check: ## Check playbook syntax
 	$(ANSIBLE_PLAYBOOK) playbooks/deploy-all.yml --syntax-check

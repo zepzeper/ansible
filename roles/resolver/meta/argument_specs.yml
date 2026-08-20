@@ -1,0 +1,30 @@
+---
+argument_specs:
+  main:
+    short_description: Points the host at a chosen DNS resolver
+    description:
+      - Detects which component owns /etc/resolv.conf by reading the file's own
+        generator line rather than guessing a systemd unit name, because dhcpcd
+        ships as dhcpcd.service on some releases and dhcpcd5.service on others.
+      - Skips entirely when resolver_primary is empty, so a host on a network
+        without a local resolver is left alone.
+    options:
+      resolver_primary:
+        type: str
+        default: ""
+        description:
+          - First nameserver. Empty disables the whole role.
+      resolver_fallback:
+        type: str
+        default: ""
+        description:
+          - Second nameserver, used when the primary does not answer. Must be a
+            resolver that actually responds - pointing this at a device that
+            only relays DHCP leaves the host with no working fallback, which
+            turns a restart of the primary into a deadlock.
+      resolver_exclusive:
+        type: bool
+        default: false
+        description:
+          - Stop the DHCP client appending the nameservers the router hands out.
+            glibc reads at most three, so a duplicate wastes a slot.

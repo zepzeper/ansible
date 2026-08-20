@@ -1,0 +1,11 @@
+---
+# Site-wide values that genuinely differ from the role defaults. Anything a role
+# already defaults to correctly is deliberately absent: re-stating it here adds a
+# second place to edit and a second place to drift.
+#
+# Package lists live in roles/baseline and roles/hardening. They were duplicated
+# here, and the copies had diverged.
+
+timezone: "Europe/Amsterdam"
+extra_locales:
+  - "nl_NL.UTF-8"

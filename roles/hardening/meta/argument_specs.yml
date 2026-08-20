@@ -1,0 +1,23 @@
+---
+argument_specs:
+  main:
+    short_description: SSH hardening, kernel tuning and unattended upgrades
+    description:
+      - Host policy that is independent of what the machine goes on to run.
+    options:
+      server_packages:
+        type: list
+        elements: str
+        description: Diagnostic and maintenance packages installed on every host.
+      manage_swap:
+        type: bool
+        default: true
+        description:
+          - Disable swap, which kubelet requires. Set false in a container,
+            which shares the host kernel and has no swap of its own.
+      manage_kernel_modules:
+        type: bool
+        default: true
+        description:
+          - Load br_netfilter. Set false in a container, which cannot load
+            modules into the host kernel.

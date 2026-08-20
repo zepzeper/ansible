@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: resolver
+  author: zepzeper
+  description: DNS resolver configuration, manager-agnostic
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
+  galaxy_tags: [system, networking]
+
+dependencies: []

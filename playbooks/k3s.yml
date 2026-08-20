@@ -4,11 +4,24 @@
   become: yes
   gather_facts: yes
   roles:
-    - tailscale
+    - role: tailscale
+      tags: tailscale
 
 - name: Install K3s cluster
-  hosts: k3s:all
+  hosts: k3s
   become: yes
   gather_facts: yes
   roles:
-    - k3s
+    - role: k3s
+      tags: k3s
+
+# k3s opens ports by declaring firewall_tcp_ports / firewall_udp_ports, so the
+# firewall role has to run again once those variables are in play. Re-running it
+# is cheap and idempotent, and it keeps a single writer for the filter table.
+- name: Reconcile the firewall for cluster ports
+  hosts: k3s
+  become: yes
+  gather_facts: yes
+  roles:
+    - role: firewall
+      tags: firewall

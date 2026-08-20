@@ -1,0 +1,20 @@
+---
+argument_specs:
+  main:
+    short_description: Host-side application config, and the app Kustomize tree
+    description:
+      - Writes the hostPath configuration several deployments mount, then applies
+        k8s/apps. The host files are deliberately Ansible's job - they are the
+        machine, not the cluster.
+    options:
+      k8s_tree:
+        type: str
+        description: Root of the Kustomize tree, resolved on the control node.
+      k8s_app_deployments:
+        type: list
+        elements: dict
+        description: Deployments checked for readiness, each with namespace and deploy.
+      ingress_lan_address:
+        type: str
+        required: true
+        description: Address Pi-hole returns for service names on the LAN.

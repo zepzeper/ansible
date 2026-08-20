@@ -1,0 +1,29 @@
+---
+timezone: UTC
+locale: en_US.UTF-8
+extra_locales: []
+admin_username: admin
+admin_group: admin
+admin_shell: /bin/bash
+admin_ssh_keys: []
+base_packages:
+  # Single source of truth. An inventory that re-declares this list silently
+  # drops whatever it omits - prod's copy left out openssh-server, masking the
+  # role default and leaving the SSH hardening tasks editing a file that did not
+  # exist on a fresh host.
+  - locales          # /etc/locale.gen, required by the locale_gen tasks
+  - openssh-server   # /etc/ssh/sshd_config, required by the SSH hardening tasks
+  - ca-certificates
+  - curl
+  - git
+  - gnupg
+  - htop
+  - lsb-release
+  - rsync
+  - sudo
+  - vim
+  - wget
+
+# Docker bind-mounts /etc/hostname and /etc/hosts, so a container cannot set
+# either. Defaults on for real hosts; the staging inventory turns it off.
+manage_hostname: true

@@ -1,0 +1,32 @@
+---
+argument_specs:
+  main:
+    short_description: Cluster infrastructure, applied from the Kustomize tree
+    description:
+      - Applies k8s/infrastructure with kubernetes.core.k8s rather than shelling
+        out to kubectl, so change detection comes from comparing desired against
+        live state instead of from grep guards over command output.
+    options:
+      k8s_tree:
+        type: str
+        description: Root of the Kustomize tree, resolved on the control node.
+      k8s_upstream_components:
+        type: list
+        elements: dict
+        description:
+          - Upstream manifests pinned by URL, each with a name and url key.
+      k8s_cloudflare_secret_namespaces:
+        type: list
+        elements: str
+        description: Namespaces that receive the Cloudflare API token secret.
+      vault_cloudflare_api_token:
+        type: str
+        required: true
+      ingress_status_address:
+        type: str
+        required: true
+        description: Address published into every Ingress status, and served via externalIPs.
+      ingress_lan_address:
+        type: str
+        required: true
+        description: MetalLB VIP pinned on the ingress controller Service.

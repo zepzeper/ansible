@@ -1,4 +1,6 @@
 ---
+# Host layer only: identity, hardening, firewall, resolver. Everything here runs
+# against staging in CI, which is why it is the play the idempotence job uses.
 - name: Bootstrap servers
   hosts: all
   become: yes
@@ -9,10 +11,17 @@
       apt:
         update_cache: yes
         cache_valid_time: 3600
+      tags: bootstrap
 
   roles:
-    - common
-    - server
+    - role: baseline
+      tags: baseline
+    - role: hardening
+      tags: hardening
+    - role: firewall
+      tags: firewall
+    - role: resolver
+      tags: resolver
 
   post_tasks:
     - name: Reboot if kernel updated
@@ -20,4 +29,10 @@
         reboot_timeout: 300
         pre_reboot_delay: 30
       when: ansible_facts.packages['linux-image-amd64'] is defined
-      failed_when: false
+      # A container cannot reboot and says so; anything else is a real failure.
+      failed_when:
+        - reboot_result is failed
+        - "'Running in chroot' not in (reboot_result.msg | default(''))"
+        - "'Unable to restart' not in (reboot_result.msg | default(''))"
+      register: reboot_result
+      tags: bootstrap

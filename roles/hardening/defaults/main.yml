@@ -1,0 +1,19 @@
+---
+# Declared here rather than only in an inventory's group_vars: the old server
+# role consumed server_packages without defining it, so it worked on ds10u by
+# coincidence and failed on any inventory that did not happen to set it.
+server_packages:
+  - btop
+  - iotop
+  - tcpdump
+  - ethtool
+  - fzf
+  - jq
+  - unattended-upgrades
+  - apt-listchanges
+
+# A container shares the host kernel, so it has no swap of its own to disable and
+# cannot load modules. Both default on for real hosts and are turned off by the
+# staging inventory, which lets the same role converge in CI unmodified.
+manage_swap: true
+manage_kernel_modules: true

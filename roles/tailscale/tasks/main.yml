@@ -8,7 +8,8 @@
     state: present
     update_cache: yes
   tags:
-    - networking
+    - configure
+    - network
     - tailscale
 
 - name: Remove old Tailscale source list and keyring (if present)
@@ -19,7 +20,8 @@
     - /etc/apt/sources.list.d/tailscale.list
     - /usr/share/keyrings/tailscale-archive-keyring.gpg
   tags:
-    - networking
+    - configure
+    - network
     - tailscale
 
 - name: Add Tailscale apt repository
@@ -32,7 +34,8 @@
     signed_by: https://pkgs.tailscale.com/stable/{{ ansible_facts['distribution'] | lower }}/{{ ansible_facts['distribution_release'] | lower }}.noarmor.gpg
     state: present
   tags:
-    - networking
+    - configure
+    - network
     - tailscale
 
 - name: Install Tailscale package
@@ -40,7 +43,8 @@
     name: tailscale
     state: present
   tags:
-    - networking
+    - configure
+    - network
     - tailscale
 
 - name: Enable tailscaled service
@@ -49,7 +53,8 @@
     enabled: yes
     state: started
   tags:
-    - networking
+    - configure
+    - network
     - tailscale
 
 - name: Check if Tailscale is already authenticated
@@ -57,8 +62,12 @@
   register: tailscale_status
   changed_when: false
   failed_when: false
+  # Read-only, and the task below cannot evaluate its condition without the
+  # result. Skipping it under --check made a dry run fail outright.
+  check_mode: false
   tags:
-    - networking
+    - configure
+    - network
     - tailscale
 
 - name: Authenticate Tailscale
@@ -67,12 +76,17 @@
       --authkey="{{ vault_tailscale_authkey }}" \
       --advertise-routes="{{ k3s_advertise_routes }}" \
       --accept-routes={{ tailscale_accept_routes | default('false') }}
+  # Guard on stdout being parseable before reaching for from_json: a failed or
+  # skipped probe leaves it empty, and from_json on '' raises rather than
+  # returning a default.
   when: >
     tailscale_status.rc != 0 or
-    (tailscale_status.stdout | from_json | default({})).get('BackendState') != 'Running'
+    (tailscale_status.stdout | default('') | trim | length) == 0 or
+    (tailscale_status.stdout | from_json).get('BackendState') != 'Running'
   notify: restart tailscaled
   tags:
-    - networking
+    - configure
+    - network
     - tailscale
 
 # `tailscale up` above only runs on a node that is not yet authenticated, so a
@@ -87,5 +101,6 @@
   register: tailscale_set
   changed_when: false
   tags:
-    - networking
+    - configure
+    - network
     - tailscale

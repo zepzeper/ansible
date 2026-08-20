@@ -1,0 +1,31 @@
+---
+argument_specs:
+  main:
+    short_description: Installs Tailscale and reconciles what this node advertises
+    description:
+      - Authentication only runs on a node that is not yet on the tailnet.
+        Advertised routes and the exit-node flag are reconciled separately with
+        `tailscale set`, because `tailscale up` is skipped on an existing node
+        and a changed flag would otherwise never reach it.
+    options:
+      vault_tailscale_authkey:
+        type: str
+        required: true
+        description: Pre-auth key used for the initial login.
+      k3s_advertise_routes:
+        type: str
+        required: true
+        description: Subnet advertised to the tailnet, as a CIDR.
+      tailscale_accept_routes:
+        type: bool
+        default: false
+        description:
+          - Whether this node accepts routes advertised by others. Off by
+            default and deliberately so - Tailscale installs accepted subnets in
+            policy table 52 at rule priority 5270, ahead of the main table, so a
+            host physically on an advertised subnet sends its own LAN traffic
+            into the tunnel and loses local connectivity.
+      tailscale_advertise_exit_node:
+        type: bool
+        default: true
+        description: Offer this node as an exit node, subject to admin approval.

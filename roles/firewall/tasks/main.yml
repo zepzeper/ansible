@@ -1,0 +1,51 @@
+---
+# Sole owner of the filter table. Every port arrives as a variable so no
+# other role edits iptables directly - roles/k3s used to append its own and
+# persist them with iptables-save, which this role's template then silently
+# overwrote on the next run, closing 6443 with a green PLAY RECAP.
+- name: Install iptables and persistency tools
+  apt:
+    name:
+      - iptables
+      - iptables-persistent
+    state: present
+  tags:
+    - configure
+    - firewall
+
+- name: Ensure iptables directory exists
+  file:
+    path: /etc/iptables
+    state: directory
+    mode: "0755"
+  tags:
+    - configure
+    - firewall
+
+- name: Deploy base IPv4 rules
+  template:
+    src: iptables-rules.v4.j2
+    dest: /etc/iptables/rules.v4
+    mode: "0644"
+  notify: restore iptables
+  tags:
+    - configure
+    - firewall
+
+- name: Deploy base IPv6 rules
+  template:
+    src: iptables-rules.v6.j2
+    dest: /etc/iptables/rules.v6
+    mode: "0644"
+  notify: restore iptables
+  tags:
+    - configure
+    - firewall
+
+- name: Enable netfilter-persistent service
+  systemd:
+    name: netfilter-persistent
+    enabled: yes
+  tags:
+    - configure
+    - firewall

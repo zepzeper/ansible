@@ -8,8 +8,8 @@
     state: present
     update_cache: yes
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
 - name: Download k3s install script
   get_url:
@@ -17,8 +17,8 @@
     dest: /usr/local/bin/k3s-install.sh
     mode: "0755"
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
 - name: Install k3s agent
   environment:
@@ -31,40 +31,8 @@
   args:
     creates: /usr/local/bin/k3s
   tags:
+    - deploy
     - k3s
-    - kubernetes
 
-- name: Allow k3s worker TCP ports
-  ansible.builtin.iptables:
-    chain: INPUT
-    protocol: tcp
-    destination_port: "{{ item }}"
-    jump: ACCEPT
-    state: present
-  loop: "{{ k3s_worker_tcp_ports }}"
-  register: k3s_iptables_tcp_rules
-  notify: restore iptables
-  tags:
-    - k3s
-    - firewall
-
-- name: Allow k3s worker UDP ports
-  ansible.builtin.iptables:
-    chain: INPUT
-    protocol: udp
-    destination_port: "{{ item }}"
-    jump: ACCEPT
-    state: present
-  loop: "{{ k3s_worker_udp_ports }}"
-  register: k3s_iptables_udp_rules
-  notify: restore iptables
-  tags:
-    - k3s
-    - firewall
-
-- name: Persist iptables rules
-  shell: iptables-save > /etc/iptables/rules.v4
-  when: k3s_iptables_tcp_rules is changed or k3s_iptables_udp_rules is changed
-  tags:
-    - k3s
-    - firewall
+# Firewall rules live in roles/firewall, the sole owner of the filter table.
+# Worker ports are declared as firewall_tcp_ports / firewall_udp_ports.

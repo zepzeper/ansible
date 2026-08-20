@@ -1,11 +1,15 @@
 ---
+# Host-side configuration first: several deployments mount these paths as
+# hostPath, so the files have to exist before the pods that read them start.
+# This is the part Flux could never own - it is the machine, not the cluster.
+
 - name: Create Home Assistant configuration
   template:
     src: configuration.yaml.j2
     dest: /var/lib/home-assistant/configuration.yaml
     mode: "0644"
   tags:
-    - apps
+    - deploy
     - home-assistant
 
 - name: Create Home Assistant themes directory
@@ -14,7 +18,7 @@
     state: directory
     mode: "0755"
   tags:
-    - apps
+    - deploy
     - home-assistant
 
 - name: Create Home Assistant placeholder files
@@ -29,7 +33,7 @@
     - /var/lib/home-assistant/scenes.yaml
     - /var/lib/home-assistant/themes/.gitkeep
   tags:
-    - apps
+    - deploy
     - home-assistant
 
 - name: Create Homepage config files
@@ -38,18 +42,13 @@
     dest: "{{ item.dest }}"
     mode: "0644"
   loop:
-    - src: homepage-settings.yaml.j2
-      dest: /var/lib/homepage/settings.yaml
-    - src: homepage-services.yaml.j2
-      dest: /var/lib/homepage/services.yaml
-    - src: homepage-bookmarks.yaml.j2
-      dest: /var/lib/homepage/bookmarks.yaml
-    - src: homepage-widgets.yaml.j2
-      dest: /var/lib/homepage/widgets.yaml
-    - src: homepage-kubernetes.yaml.j2
-      dest: /var/lib/homepage/kubernetes.yaml
+    - {src: homepage-settings.yaml.j2, dest: /var/lib/homepage/settings.yaml}
+    - {src: homepage-services.yaml.j2, dest: /var/lib/homepage/services.yaml}
+    - {src: homepage-bookmarks.yaml.j2, dest: /var/lib/homepage/bookmarks.yaml}
+    - {src: homepage-widgets.yaml.j2, dest: /var/lib/homepage/widgets.yaml}
+    - {src: homepage-kubernetes.yaml.j2, dest: /var/lib/homepage/kubernetes.yaml}
   tags:
-    - apps
+    - deploy
     - homepage
 
 - name: Create TuliProx config files
@@ -58,60 +57,62 @@
     dest: "{{ item.dest }}"
     mode: "0644"
   loop:
-    - src: tuliprox-source.yml.j2
-      dest: /var/lib/tuliprox/config/source.yml
-    - src: tuliprox-config.yml.j2
-      dest: /var/lib/tuliprox/config/config.yml
-    - src: tuliprox-api-proxy.yml.j2
-      dest: /var/lib/tuliprox/config/api-proxy.yml
+    - {src: tuliprox-source.yml.j2, dest: /var/lib/tuliprox/config/source.yml}
+    - {src: tuliprox-config.yml.j2, dest: /var/lib/tuliprox/config/config.yml}
+    - {src: tuliprox-api-proxy.yml.j2, dest: /var/lib/tuliprox/config/api-proxy.yml}
+  no_log: true
   tags:
-    - apps
+    - deploy
     - tuliprox
 
+###############################################################################
+# Applications
+###############################################################################
+
 - name: Apply application manifests
-  command: "kubectl apply -f /home/{{ admin_username }}/kubernetes-manifests/{{ item }}"
-  register: app_result
-  changed_when: "'created' in app_result.stdout"
-  loop:
-    - pihole/pihole.yml
-    - home-assistant/home-assistant.yml
-    - vaultwarden/vaultwarden.yml
-    - mealie/mealie.yml
-    - uptimekuma/uptimekuma.yml
-    - homepage/homepage.yml
-    - tuliprox/tuliprox.yml
-    - calibre/calibre.yml
-    - media/qbittorrent.yml
-    - media/prowlarr.yml
-    - media/readarr.yml
-    - paperless/paperless.yml
+  kubernetes.core.k8s:
+    definition: "{{ lookup('kubernetes.core.kustomize', dir=k8s_tree + '/apps') }}"
+    apply: true
+    state: present
+    server_side_apply:
+      field_manager: ansible
+      force_conflicts: true
   tags:
+    - deploy
     - apps
     - manifests
 
 - name: Wait for application deployments to be ready
-  shell: |
-    set -o pipefail
-    kubectl -n {{ item.namespace }} wait --for=condition=Available deployment/{{ item.deploy }} --timeout=120s
-  changed_when: false
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: "{{ item.namespace }}"
+    name: "{{ item.deploy }}"
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 120
+  loop: "{{ k8s_app_deployments }}"
+  loop_control:
+    label: "{{ item.namespace }}/{{ item.deploy }}"
+  # A single slow or crash-looping app should not mask the rest of the report.
+  register: app_health
   failed_when: false
-  loop:
-    - { namespace: pihole, deploy: pihole }
-    - { namespace: home-assistant, deploy: home-assistant }
-    - { namespace: vaultwarden, deploy: vaultwarden }
-    - { namespace: mealie, deploy: mealie }
-    - { namespace: kuma, deploy: uptimekuma }
-    - { namespace: homepage, deploy: homepage }
-    - { namespace: tuliprox, deploy: tuliprox }
-    - { namespace: books, deploy: calibre }
-    - { namespace: media, deploy: qbittorrent }
-    - { namespace: media, deploy: prowlarr }
-    - { namespace: media, deploy: readarr }
-    - { namespace: paperless, deploy: paperless }
-    - { namespace: paperless, deploy: paperless-redis }
-    - { namespace: paperless, deploy: paperless-postgres }
   tags:
-    - apps
+    - deploy
+    - health
+
+- name: Report application deployments that are not ready
+  debug:
+    msg: >-
+      Not ready: {{ app_health.results
+                    | selectattr('failed', 'defined')
+                    | selectattr('failed')
+                    | map(attribute='item')
+                    | map('to_json') | join(', ') }}
+  when: app_health.results | selectattr('failed', 'defined') | selectattr('failed') | list | length > 0
+  tags:
+    - deploy
     - health
 
 ###############################################################################
@@ -121,15 +122,12 @@
 # Read the hostnames back out of the cluster rather than keeping a second list
 # in sync by hand, so a newly added Ingress is picked up on the next run.
 - name: Collect Ingress hostnames
-  shell: |
-    set -o pipefail
-    kubectl get ingress -A \
-      -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{"\n"}{end}{end}' \
-      | grep -v '^$' | sort -u
-  register: ingress_hosts
-  changed_when: false
+  kubernetes.core.k8s_info:
+    kind: Ingress
+    api_version: networking.k8s.io/v1
+  register: ingress_objects
   tags:
-    - apps
+    - deploy
     - dns
 
 - name: Write Pi-hole LAN overrides
@@ -139,5 +137,5 @@
     mode: "0644"
   notify: restart pihole
   tags:
-    - apps
+    - deploy
     - dns
