@@ -1,29 +1,78 @@
 #!/usr/bin/env bash
-# Restic backup script - managed by Ansible
+# Nightly backup - managed by Ansible (roles/backup).
+#
+# Writes to stdout and stderr only. systemd captures both into the journal, so
+# there is no log file to own, rotate, or - as happened here - be unable to
+# write to. The previous version's first action was appending to a root-owned
+# log path while running as an unprivileged user, which failed under
+# `set -euo pipefail` before a single file was ever backed up.
+
 set -euo pipefail
 
 export RESTIC_REPOSITORY="{{ restic_repo }}"
+export RESTIC_PASSWORD_FILE="{{ restic_password_file }}"
 export RESTIC_PROGRESS_FPS=0
 
-LOG="/var/log/restic-backup.log"
-
-echo "=== Backup started: $(date) ===" >> "$LOG"
-
-{% for path in backup_paths %}
-if [ -d "{{ path }}" ]; then
-  echo "Backing up {{ path }}..." >> "$LOG"
-  restic backup --insecure-no-password "{{ path }}" >> "$LOG" 2>&1
+{% if backup_k3s_state %}
+# k3s stores cluster state in sqlite with WAL enabled. Reading state.db directly
+# while the apiserver writes to it can capture a torn transaction, and the -wal
+# and -shm sidecars make a plain file copy meaningless on its own. sqlite's
+# online backup API takes a consistent snapshot of a live database.
+#
+# Worth having: the PersistentVolume objects binding each PVC to its directory
+# under k3s/storage live only here. Restoring those directories without this
+# leaves data on disk that no PVC claims.
+if [ -f "{{ k3s_state_db }}" ]; then
+    echo "Snapshotting k3s state database"
+    sqlite3 "{{ k3s_state_db }}" ".backup '{{ k3s_state_snapshot }}'"
+    chmod 600 "{{ k3s_state_snapshot }}"
 fi
+
+{% endif %}
+candidates=(
+{% for path in backup_paths %}
+    "{{ path }}"
 {% endfor %}
+{% if backup_k3s_state %}
+    "{{ k3s_state_snapshot }}"
+{% endif %}
+)
 
-echo "Forgetting old snapshots..." >> "$LOG"
-restic forget \
-  --insecure-no-password \
-  --keep-last {{ restic_retention.keep_last }} \
-  --keep-daily {{ restic_retention.keep_daily }} \
-  --keep-weekly {{ restic_retention.keep_weekly }} \
-  --keep-monthly {{ restic_retention.keep_monthly }} \
-  --prune >> "$LOG" 2>&1
+{# bash parameter expansion below uses ${#...}, which Jinja would read as a
+   comment opener - hence raw. #}
+{% raw %}
+# Skip anything absent rather than letting restic fail the whole run over one
+# missing directory. /run/secrets/rendered in particular does not exist until
+# the apps have been deployed at least once.
+paths=()
+for p in "${candidates[@]}"; do
+    if [ -e "$p" ]; then
+        paths+=("$p")
+    else
+        echo "skip: $p does not exist"
+    fi
+done
 
-echo "=== Backup finished: $(date) ===" >> "$LOG"
-echo "" >> "$LOG"
+if [ ${#paths[@]} -eq 0 ]; then
+    echo "nothing to back up - no configured path exists" >&2
+    exit 1
+fi
+
+# One invocation, one snapshot. The previous version looped and produced a
+# separate snapshot per path every night, so retention applied per path-group
+# and no single snapshot was a consistent view of the host.
+echo "Backing up ${#paths[@]} paths to $RESTIC_REPOSITORY"
+restic backup --tag scheduled --exclude-caches "${paths[@]}"
+
+echo
+restic snapshots --latest 1 --compact
+{% endraw %}
+{% if backup_healthcheck_url | length > 0 %}
+
+# Only reached when everything above succeeded, because of `set -e`. The monitor
+# on the other end alerts on absence, which is the failure mode that went
+# unnoticed for weeks: a backup that never runs looks identical to a healthy
+# system if you only watch for errors.
+curl -fsS --max-time 20 --retry 3 "{{ backup_healthcheck_url }}" >/dev/null
+echo "Healthcheck pinged"
+{% endif %}

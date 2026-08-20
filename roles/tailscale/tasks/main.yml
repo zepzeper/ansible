@@ -84,6 +84,9 @@
     (tailscale_status.stdout | default('') | trim | length) == 0 or
     (tailscale_status.stdout | from_json).get('BackendState') != 'Running'
   notify: restart tailscaled
+  # The pre-auth key is on the command line, so without this it is echoed in
+  # task output on failure and under -v.
+  no_log: true
   tags:
     - configure
     - network

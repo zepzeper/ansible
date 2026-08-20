@@ -29,6 +29,9 @@
     /usr/local/bin/k3s-install.sh
   args:
     creates: /usr/local/bin/k3s
+  # The token is interpolated into the environment, so without this it
+  # appears in task output on failure and under -v.
+  no_log: true
   tags:
     - deploy
     - k3s
@@ -57,6 +60,9 @@
     - k3s_extra_flags.split()
       | reject('in', k3s_unit.content | b64decode)
       | list | length > 0
+  # The token is interpolated into the environment, so without this it
+  # appears in task output on failure and under -v.
+  no_log: true
   tags:
     - deploy
     - k3s

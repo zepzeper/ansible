@@ -1,7 +1,13 @@
 ---
-- name: Install and configure backup system
+# monitoring provides alert@.service, which the backup units declare in
+# OnFailure. It is also listed as a role dependency in roles/backup/meta, so it
+# would be pulled in regardless - naming it here makes the order visible.
+- name: Install monitoring and backups
   hosts: all
   become: yes
   gather_facts: yes
   roles:
-    - backup
+    - role: monitoring
+      tags: monitoring
+    - role: backup
+      tags: backup

@@ -1,0 +1,25 @@
+---
+# Optional outbound notifier. Empty means failures are recorded at error
+# priority in the journal and nowhere else - which is honest, but nobody reads
+# the journal unprompted. Any URL that accepts a POST works: an Uptime Kuma push
+# monitor, ntfy, a Discord webhook.
+alert_webhook_url: ""
+
+# Checks that run on a schedule and fail loudly. Each one exists because it is a
+# failure that produces no symptom until it is far too late to act on.
+monitoring_schedule: "hourly"
+
+# / fills silently until writes start failing. 216G today, 12% used.
+disk_warn_percent: 80
+
+# cert-manager renews via DNS-01 against Cloudflare. A revoked or expired API
+# token makes renewal fail with no outward sign until a browser refuses the
+# site, roughly 30 days later.
+cert_expiry_warn_days: 21
+
+# A backup that stops running looks exactly like a healthy system if you only
+# watch for errors. This asserts a snapshot exists and is recent.
+backup_max_age_hours: 30
+restic_repo: "/var/backups/restic"
+restic_password_file: /etc/restic/password
+k8s_kubeconfig: /etc/rancher/k3s/k3s.yaml

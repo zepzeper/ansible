@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Weekly repository maintenance - managed by Ansible (roles/backup).
+#
+# Split out of the nightly run on purpose. `forget --prune` rewrites pack files
+# and is by far the most expensive thing restic does; running it nightly spends
+# most of the backup window on housekeeping. `check` was not being run at all,
+# so repository corruption would have been discovered only during a restore.
+
+set -euo pipefail
+
+export RESTIC_REPOSITORY="{{ restic_repo }}"
+export RESTIC_PASSWORD_FILE="{{ restic_password_file }}"
+export RESTIC_PROGRESS_FPS=0
+
+echo "Applying retention policy"
+restic forget \
+  --keep-last {{ restic_retention.keep_last }} \
+  --keep-daily {{ restic_retention.keep_daily }} \
+  --keep-weekly {{ restic_retention.keep_weekly }} \
+  --keep-monthly {{ restic_retention.keep_monthly }} \
+  --prune
+
+# Reads a subset of the actual pack data rather than just the metadata, so it
+# catches bit rot that a metadata-only check would miss.
+echo "Verifying repository integrity"
+restic check --read-data-subset=5%
+
+restic snapshots --compact

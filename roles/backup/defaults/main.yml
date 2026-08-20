@@ -1,21 +1,52 @@
 ---
 backup_enabled: true
-backup_user: "{{ admin_username }}"
-backup_group: "{{ admin_group }}"
-backup_dir: /var/backups
-restic_repo: /var/backups/restic
+
+# Where restic keeps the repository.
+#
+# This default is deliberately called out as wrong: it sits on /dev/sda2, the
+# same filesystem as everything it protects, so a disk failure takes the data
+# and the backup together. It is a starting point, not a destination - restic
+# takes sftp:, s3:, b2: and rest: URLs here with no other change to this role.
+restic_repo: "/var/backups/restic"
+
+# Required. An empty value now fails the run rather than silently producing an
+# unencrypted repository, which is what --insecure-no-password was doing.
+# Keep a copy outside this vault: losing it makes every snapshot unreadable.
 restic_password: ""
-restic_retention:
-  keep_last: 7
-  keep_daily: 30
-  keep_weekly: 12
-  keep_monthly: 6
-backup_schedule: daily
-backup_time: "02:00"
+
+# One snapshot per run covering all of these, rather than one snapshot per path.
 backup_paths:
+  - /var/lib/rancher/k3s/storage    # every PVC - paperless, postgres, mealie, kuma, calibre, media
   - /var/lib/pihole
   - /var/lib/home-assistant
   - /var/lib/vaultwarden
   - /var/lib/homepage
   - /var/lib/tuliprox
   - /run/secrets/rendered
+
+# k3s keeps cluster state in sqlite. Copying the file while k3s is writing to it
+# can capture a torn transaction, so the script takes a consistent copy with
+# sqlite's online backup API and hands restic that instead.
+backup_k3s_state: true
+k3s_state_db: /var/lib/rancher/k3s/server/db/state.db
+k3s_state_snapshot: /var/lib/rancher/k3s-state-backup.db
+
+# Applied on the weekly maintenance run, not nightly - prune rewrites pack files
+# and is the expensive half of restic.
+restic_retention:
+  keep_last: 7
+  keep_daily: 30
+  keep_weekly: 12
+  keep_monthly: 6
+
+backup_schedule: "daily"
+backup_maintenance_schedule: "Sun 03:00"
+
+# Optional dead-man's-switch. Uptime Kuma push monitors expose a URL that must
+# be hit on a schedule; when it stops being hit, Kuma alerts. That detects a
+# backup that never ran, which a status page checking HTTP endpoints cannot.
+backup_healthcheck_url: ""
+
+backup_script: /usr/local/sbin/restic-backup
+backup_maintenance_script: /usr/local/sbin/restic-maintenance
+restic_password_file: /etc/restic/password

@@ -11,7 +11,7 @@ set -euo pipefail
 : "${PRESEED:=ds10u-preseed.cfg}"
 
 TMPDIR=$(mktemp -d)
-trap "rm -rf $TMPDIR" EXIT
+trap 'rm -rf "$TMPDIR"' EXIT
 
 echo "==> Downloading Debian ${DEBIAN_VERSION} netinstall..."
 wget -c "$DEBIAN_URL" -O "$TMPDIR/$DEBIAN_ISO"
@@ -20,7 +20,34 @@ echo "==> Extracting ISO..."
 xorriso -osirrox on -indev "$TMPDIR/$DEBIAN_ISO" -extract / "$TMPDIR/iso/"
 
 echo "==> Injecting preseed..."
-cp "$(dirname "$0")/$PRESEED" "$TMPDIR/iso/preseed.cfg"
+# The preseed ships with a placeholder rather than a real password hash. The
+# previous version committed a live SHA-512 hash for the admin account, which is
+# offline-crackable by anyone who can read this repository - and this repository
+# is on GitHub.
+#
+# ADMIN_PASSWORD_HASH can be set in the environment; otherwise you are prompted
+# and the hash is generated here, so the plaintext never reaches a file.
+if [ -z "${ADMIN_PASSWORD_HASH:-}" ]; then
+    printf 'Password for the initial admin account: '
+    stty -echo
+    read -r _pw
+    stty echo
+    printf '\n'
+    [ -n "$_pw" ] || {
+        echo "no password given" >&2
+        exit 1
+    }
+    ADMIN_PASSWORD_HASH="$(printf '%s' "$_pw" | mkpasswd --method=sha-512 --stdin)"
+    unset _pw
+fi
+
+sed "s|@@ADMIN_PASSWORD_HASH@@|${ADMIN_PASSWORD_HASH}|" \
+    "$(dirname "$0")/$PRESEED" >"$TMPDIR/iso/preseed.cfg"
+
+grep -q '@@ADMIN_PASSWORD_HASH@@' "$TMPDIR/iso/preseed.cfg" && {
+    echo "password hash was not substituted" >&2
+    exit 1
+}
 
 echo "==> Configuring boot to auto-load preseed..."
 cat > "$TMPDIR/iso/isolinux/txt.cfg" << 'ISOCFG'

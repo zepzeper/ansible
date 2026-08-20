@@ -1,0 +1,62 @@
+---
+- name: Install check dependencies
+  apt:
+    name:
+      - curl
+      - restic
+    state: present
+  tags:
+    - configure
+    - monitoring
+
+- name: Deploy the failure notifier
+  template:
+    src: alert-failure.sh.j2
+    dest: /usr/local/sbin/alert-failure
+    owner: root
+    group: root
+    mode: "0700"
+  tags:
+    - configure
+    - monitoring
+
+- name: Deploy the health check
+  template:
+    src: node-health.sh.j2
+    dest: /usr/local/sbin/node-health
+    owner: root
+    group: root
+    mode: "0700"
+  tags:
+    - configure
+    - monitoring
+
+- name: Deploy the systemd units
+  template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - alert@.service
+    - node-health.service
+    - node-health.timer
+  notify: reload systemd
+  tags:
+    - configure
+    - monitoring
+
+- name: Reload systemd before enabling the timer
+  systemd:
+    daemon_reload: yes
+  tags:
+    - configure
+    - monitoring
+
+- name: Enable the health timer
+  systemd:
+    name: node-health.timer
+    enabled: yes
+    state: started
+  tags:
+    - configure
+    - monitoring

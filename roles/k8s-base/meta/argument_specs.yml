@@ -22,6 +22,10 @@ argument_specs:
       vault_cloudflare_api_token:
         type: str
         required: true
+      vault_pihole_password:
+        type: str
+        required: true
+        description: Pi-hole admin and API password, delivered as a Secret.
       ingress_status_address:
         type: str
         required: true

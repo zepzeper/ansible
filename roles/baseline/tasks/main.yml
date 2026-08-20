@@ -103,3 +103,52 @@
   tags:
     - configure
     - ssh
+
+###############################################################################
+# Stale provisioning artefacts
+###############################################################################
+
+# The preseed's late_command used to grant `admin` passwordless sudo
+# unconditionally. On ds10u that grant outlived the account: the file is present
+# while `getent passwd admin` returns nothing, so anyone who later creates a user
+# by that name inherits root. The preseed no longer writes it; this removes the
+# one already on disk.
+#
+# Guarded twice so it can never remove a grant that is actually in use.
+- name: Check whether the legacy admin account exists
+  getent:
+    database: passwd
+    key: admin
+    fail_key: false
+  register: legacy_admin
+  tags:
+    - bootstrap
+    - identity
+
+- name: Remove the sudo grant left behind for a non-existent admin account
+  file:
+    path: /etc/sudoers.d/admin
+    state: absent
+  when:
+    - admin_username != 'admin'
+    - not (legacy_admin.ansible_facts.getent_passwd.admin is defined
+           and legacy_admin.ansible_facts.getent_passwd.admin)
+  tags:
+    - bootstrap
+    - identity
+
+# Left by the old k8s role, which rsynced the manifest tree to
+# /home/{{ admin_username }} before applying it. admin_username has not always
+# resolved the same way, so copies accumulated under two different homes. The
+# Kustomize lookup renders on the control node, so nothing is copied to the host
+# at all now.
+- name: Remove stale manifest copies from home directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /home/admin/kubernetes-manifests
+    - "/home/{{ admin_username }}/kubernetes-manifests"
+  tags:
+    - bootstrap
+    - identity

@@ -1,0 +1,21 @@
+[Unit]
+Description=Restic retention and repository verification
+Documentation=https://restic.readthedocs.io/
+Wants=network-online.target
+After=network-online.target
+OnFailure=alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart={{ backup_maintenance_script }}
+User=root
+Group=root
+CacheDirectory=restic
+Environment=RESTIC_CACHE_DIR=/var/cache/restic
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths={{ restic_repo if restic_repo.startswith('/') else '/var/cache/restic' }}
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle

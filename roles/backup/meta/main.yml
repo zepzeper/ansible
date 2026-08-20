@@ -12,4 +12,7 @@ galaxy_info:
         - trixie
   galaxy_tags: [system, backup]
 
-dependencies: []
+dependencies:
+  # Provides alert@.service, which this role's units declare in OnFailure. A
+  # backup whose failures go unreported is what this whole role was fixing.
+  - role: monitoring

@@ -29,6 +29,24 @@ spec:
               mountPath: /app/config
             - name: secrets
               mountPath: /run/secrets/rendered
+          resources:
+            requests:
+              memory: 192Mi
+              cpu: 50m
+            limits:
+              # Memory only, deliberately. CPU is compressible - a hungry
+              # container gets throttled, it does not kill anything - and a CPU
+              # limit causes latency spikes from throttling even on an idle
+              # node. Memory is not compressible: without a limit, one runaway
+              # container triggers node-level OOM, which kills arbitrary
+              # processes - possibly Pi-hole, taking DNS down for the house.
+              memory: 384Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            periodSeconds: 15
+            failureThreshold: 3
       volumes:
         - name: config
           hostPath:

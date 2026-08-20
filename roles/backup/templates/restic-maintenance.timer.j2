@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly restic retention and verification
+
+[Timer]
+OnCalendar={{ backup_maintenance_schedule }}
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

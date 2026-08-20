@@ -1,0 +1,8 @@
+[Unit]
+Description=Report the failure of %i
+# Instantiated per failing unit: any unit can declare OnFailure=alert@%n.service
+# and the instance name carries which one failed. One notifier, not one per job.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/alert-failure %i

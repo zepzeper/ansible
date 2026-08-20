@@ -33,7 +33,10 @@ spec:
     spec:
       containers:
         - name: calibre
-          image: lscr.io/linuxserver/calibre:latest
+          # Pinned to the digest running on 2026-08-20. The tag is kept for
+          # readability; the digest is what actually resolves, so a reschedule
+          # cannot silently change version. Bump deliberately.
+          image: lscr.io/linuxserver/calibre:latest@sha256:f745d349a6ef81620d6f64dd77123f4d0f20112719b5d99647c67ac4ccb29ffb
           ports:
             - containerPort: 8080
             - containerPort: 8081
@@ -49,6 +52,29 @@ spec:
               mountPath: /config
             - name: books
               mountPath: /books
+          resources:
+            requests:
+              memory: 768Mi
+              cpu: 200m
+            limits:
+              # Memory only, deliberately. CPU is compressible - a hungry
+              # container gets throttled, it does not kill anything - and a CPU
+              # limit causes latency spikes from throttling even on an idle
+              # node. Memory is not compressible: without a limit, one runaway
+              # container triggers node-level OOM, which kills arbitrary
+              # processes - possibly Pi-hole, taking DNS down for the house.
+              memory: 1536Mi
+          startupProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 10
+            # 120s of grace before readiness is believed.
+            failureThreshold: 12
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 15
+            failureThreshold: 3
       volumes:
         - name: library
           persistentVolumeClaim:

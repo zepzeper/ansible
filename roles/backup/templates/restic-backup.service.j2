@@ -1,13 +1,40 @@
 [Unit]
-Description=Restic backup for K3s data
+Description=Restic backup of k3s data and cluster state
 Documentation=https://restic.readthedocs.io/
 Wants=network-online.target
 After=network-online.target
+# alert@ is a template unit from roles/monitoring; %n passes which unit
+# failed. Fires the moment this one does, which is the whole reason the
+# previous breakage went unnoticed for weeks.
+OnFailure=alert@%n.service
 
 [Service]
 Type=oneshot
-ExecStart={{ backup_dir }}/restic-backup.sh
-User={{ backup_user }}
-Group={{ backup_group }}
+ExecStart={{ backup_script }}
+
+# Root, because the data this protects is not readable otherwise:
+# /var/lib/rancher/k3s/storage is 0700 root, as is the vaultwarden data. The
+# previous unit ran as an unprivileged user and could not have backed those up
+# even if it had got past its first line.
+#
+# Root with the filesystem locked down rather than plain root: restic needs to
+# read everything and write exactly one place.
+User=root
+Group=root
+CacheDirectory=restic
+Environment=RESTIC_CACHE_DIR=/var/cache/restic
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths={{ restic_repo if restic_repo.startswith('/') else '/var/cache/restic' }}
+{% if backup_k3s_state %}
+ReadWritePaths={{ k3s_state_snapshot | dirname }}
+{% endif %}
+
+# Backups should lose every scheduling contest against the workloads.
 IOSchedulingClass=idle
 CPUSchedulingPolicy=idle

@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic node health assertions
+
+[Timer]
+OnCalendar={{ monitoring_schedule }}
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

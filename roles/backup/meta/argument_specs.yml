@@ -1,19 +1,65 @@
 ---
 argument_specs:
   main:
-    short_description: Scheduled restic backups
+    short_description: Encrypted restic backups on a systemd timer
+    description:
+      - One snapshot per run covering every PVC, the hostPath data, and a
+        consistent copy of the k3s state database.
+      - Failures raise an OnFailure unit. The previous version failed silently
+        every night for weeks because nothing watched it.
     options:
+      backup_enabled:
+        type: bool
+        default: true
       restic_repo:
         type: str
+        description:
+          - Repository location. A local path shares a failure domain with the
+            data it protects; restic also accepts sftp, s3, b2 and rest URLs.
+      restic_password:
+        type: str
         required: true
-      backup_dir:
+        description:
+          - Repository encryption password. An empty value fails the run rather
+            than producing an unencrypted repository.
+      restic_password_file:
+        type: str
+        description: Root-only file the password is written to, read by restic.
+      backup_paths:
         type: list
         elements: str
-        description: Paths included in the snapshot.
-      backup_user:
+        description:
+          - Included in every snapshot. Must cover /var/lib/rancher/k3s/storage,
+            where every PVC lives - omitting it left paperless, its Postgres
+            database, mealie, Kuma and all media data unprotected.
+      backup_k3s_state:
+        type: bool
+        default: true
+        description:
+          - Take a consistent sqlite copy of the cluster state database. The
+            PersistentVolume objects binding PVCs to their directories exist
+            only there.
+      k3s_state_db:
         type: str
-      backup_group:
+      k3s_state_snapshot:
         type: str
+      restic_retention:
+        type: dict
+        description: keep_last / keep_daily / keep_weekly / keep_monthly.
       backup_schedule:
         type: str
-        description: systemd OnCalendar expression.
+        description: OnCalendar for the nightly backup.
+      backup_maintenance_schedule:
+        type: str
+        description:
+          - OnCalendar for forget/prune/check. Separate from the nightly run
+            because prune rewrites pack files and is the expensive half.
+      backup_healthcheck_url:
+        type: str
+        description:
+          - Optional dead-man's-switch pinged on success. Alerting on absence is
+            what catches a backup that never ran.
+      backup_script:
+        type: str
+      backup_maintenance_script:
+        type: str

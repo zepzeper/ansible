@@ -203,6 +203,42 @@
     - deploy
     - secrets
 
+- name: Create the Pi-hole admin secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: pihole-admin
+        namespace: pihole
+      stringData:
+        password: "{{ vault_pihole_password }}"
+  # Was the literal string changeme, committed in git, on a service reachable
+  # from the LAN and over the tailnet.
+  no_log: true
+  tags:
+    - deploy
+    - secrets
+
+- name: Create the paperless secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: paperless-secret
+        namespace: paperless
+      stringData:
+        secret-key: "{{ vault_paperless_secret_key }}"
+  # Django's SECRET_KEY. Was the literal changeme-in-vault; it signs sessions
+  # and password-reset tokens, so a known value means forgeable ones.
+  no_log: true
+  tags:
+    - deploy
+    - secrets
+
 ###############################################################################
 # Cluster infrastructure from the Kustomize tree
 #

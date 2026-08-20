@@ -32,7 +32,10 @@ spec:
     spec:
       containers:
         - name: prowlarr
-          image: lscr.io/linuxserver/prowlarr:latest
+          # Pinned to the digest running on 2026-08-20. The tag is kept for
+          # readability; the digest is what actually resolves, so a reschedule
+          # cannot silently change version. Bump deliberately.
+          image: lscr.io/linuxserver/prowlarr:latest@sha256:2489c6dbaf11e3a6d71aeb2e6980d04193d4af611aa7064a974851222fd41722
           ports:
             - containerPort: 9696
           env:
@@ -45,6 +48,23 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 50m
+            limits:
+              # Memory only, deliberately. CPU is compressible - a hungry
+              # container gets throttled, it does not kill anything - and a CPU
+              # limit causes latency spikes from throttling even on an idle
+              # node. Memory is not compressible: without a limit, one runaway
+              # container triggers node-level OOM, which kills arbitrary
+              # processes - possibly Pi-hole, taking DNS down for the house.
+              memory: 512Mi
+          readinessProbe:
+            tcpSocket:
+              port: 9696
+            periodSeconds: 15
+            failureThreshold: 3
       volumes:
         - name: config
           persistentVolumeClaim:

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Report a failed systemd unit - managed by Ansible (roles/monitoring).
+#
+# Invoked by alert@.service, which any unit reaches via OnFailure=alert@%n.service.
+
+set -uo pipefail
+
+unit="${1:-unknown}"
+host="$(hostname)"
+
+# Error priority so it surfaces in `journalctl -p err`, with enough context to
+# act on without going hunting.
+systemd-cat -t alert -p err <<MSG
+FAILED: ${unit} on ${host}
+  journalctl -u ${unit} -n 50 --no-pager
+$(systemctl status "${unit}" --no-pager -n 5 2>/dev/null | tail -6)
+MSG
+
+{% if alert_webhook_url | length > 0 %}
+# Best effort, and deliberately non-fatal: a notifier that fails must not mask
+# the failure it was reporting.
+curl -fsS --max-time 20 --retry 2 \
+    --data-urlencode "msg=FAILED: ${unit} on ${host}" \
+    "{{ alert_webhook_url }}" >/dev/null || true
+{% endif %}
+
+exit 0

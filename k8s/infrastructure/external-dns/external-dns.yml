@@ -48,6 +48,13 @@ spec:
             - --source=ingress
             - --provider=cloudflare
             - --domain-filter=krugten.org
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 25m
+            limits:
+              # Memory only, as everywhere else here.
+              memory: 128Mi
           env:
             - name: CF_API_TOKEN
               valueFrom:

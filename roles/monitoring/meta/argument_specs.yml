@@ -1,0 +1,32 @@
+---
+argument_specs:
+  main:
+    short_description: Health assertions and a shared failure notifier
+    description:
+      - Provides alert@.service, which any unit reaches with
+        OnFailure=alert@%n.service, and a periodic check of the conditions that
+        fail without producing a symptom.
+    options:
+      alert_webhook_url:
+        type: str
+        default: ""
+        description:
+          - Optional POST target. Empty means failures are recorded in the
+            journal at error priority and nowhere else.
+      monitoring_schedule:
+        type: str
+        description: OnCalendar for the health check.
+      disk_warn_percent:
+        type: int
+        description: Fail when / is at or above this fullness.
+      cert_expiry_warn_days:
+        type: int
+        description:
+          - Fail when any cert-manager Certificate expires sooner than this. The
+            Ready condition stays True while renewal is failing, so the expiry
+            date is what gets checked.
+      backup_max_age_hours:
+        type: int
+        description:
+          - Fail when the newest restic snapshot is older than this. Catches a
+            timer that stopped firing, which leaves no failed unit behind.

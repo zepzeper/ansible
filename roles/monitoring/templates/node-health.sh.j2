@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Periodic health assertions - managed by Ansible (roles/monitoring).
+#
+# Every check here covers a failure that produces no symptom until it is too
+# late to act cheaply. Exits non-zero on the first problem, which trips
+# OnFailure=alert@node-health.service.
+
+set -uo pipefail
+
+fail=0
+note() { echo "  $*"; }
+problem() { echo "PROBLEM: $*" >&2; fail=1; }
+
+echo "== disk =="
+used=$(df --output=pcent / | tail -1 | tr -dc '0-9')
+if [ "$used" -ge {{ disk_warn_percent }} ]; then
+    problem "/ is ${used}% full (threshold {{ disk_warn_percent }}%)"
+else
+    note "/ at ${used}%"
+fi
+
+echo "== backup freshness =="
+# Asserts a snapshot exists and is recent. The nightly job failing is caught by
+# its own OnFailure; this catches the timer never firing at all, which produces
+# no failed unit to notice.
+export RESTIC_REPOSITORY="{{ restic_repo }}"
+export RESTIC_PASSWORD_FILE="{{ restic_password_file }}"
+export RESTIC_CACHE_DIR=/var/cache/restic
+# --no-lock because this only reads. The unit runs with ProtectSystem=strict,
+# which makes the repository read-only, and restic takes a shared lock by
+# default - it retried for eight seconds and then reported no snapshots at all,
+# a false alarm that would have cried wolf every hour.
+latest=$(restic snapshots --no-lock --latest 1 --json 2>/dev/null \
+    | grep -o '"time":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+if [ -z "$latest" ]; then
+    problem "no restic snapshot found at ${RESTIC_REPOSITORY}"
+else
+    age=$(( ( $(date +%s) - $(date -d "$latest" +%s) ) / 3600 ))
+    if [ "$age" -gt {{ backup_max_age_hours }} ]; then
+        problem "newest backup is ${age}h old (threshold {{ backup_max_age_hours }}h)"
+    else
+        note "newest backup ${age}h old"
+    fi
+fi
+
+echo "== certificates =="
+# cert-manager marks a Certificate Ready and records renewalTime. A failing
+# DNS-01 renewal leaves Ready=True until the cert actually expires, so check the
+# expiry date rather than trusting the condition.
+export KUBECONFIG="{{ k8s_kubeconfig }}"
+if command -v kubectl >/dev/null; then
+    while read -r ns name expiry; do
+        [ -n "$expiry" ] || continue
+        days=$(( ( $(date -d "$expiry" +%s) - $(date +%s) ) / 86400 ))
+        if [ "$days" -lt {{ cert_expiry_warn_days }} ]; then
+            problem "certificate ${ns}/${name} expires in ${days}d"
+        else
+            note "${ns}/${name} valid ${days}d"
+        fi
+    done < <(kubectl get certificate -A \
+        -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{" "}{.status.notAfter}{"\n"}{end}' 2>/dev/null)
+else
+    note "kubectl unavailable, skipping certificate check"
+fi
+
+echo "== pods =="
+# Checks Ready, not just Running. Readiness probes take a hung container out of
+# its Service, which stops it serving errors - but the pod stays Running, so a
+# phase-only check would report everything fine while the app is down.
+if command -v kubectl >/dev/null; then
+    bad=$(kubectl get pods -A --no-headers 2>/dev/null | awk '
+        $4 == "Completed" { next }
+        {
+            split($3, r, "/")
+            if ($4 != "Running" || r[1] != r[2]) print "    " $1 "/" $2 " " $4 " (" $3 " ready)"
+        }')
+    if [ -n "$bad" ]; then
+        problem "pods not Running and Ready:"$'\n'"$bad"
+    else
+        note "all pods Running and Ready"
+    fi
+fi
+
+exit "$fail"

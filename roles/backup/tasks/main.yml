@@ -1,73 +1,153 @@
 ---
-- name: Stop here if backups are disabled
-  meta: end_play
-  when: not backup_enabled
+# The whole role is gated on a `when` rather than `meta: end_play`. end_play
+# stops the entire play, not just this role - harmless while backup.yml runs
+# nothing else, and a trap the moment it does.
+- name: Configure scheduled restic backups
+  when: backup_enabled | bool
   tags:
     - configure
     - backup
+  block:
 
-- name: Ensure backup directory exists
-  file:
-    path: "{{ backup_dir }}"
-    state: directory
-    mode: "0755"
-  tags:
-    - configure
-    - backup
+    # An empty password silently produced an unencrypted repository via
+    # --insecure-no-password. Vaultwarden's data is in these snapshots.
+    - name: Require a repository password
+      assert:
+        that:
+          - restic_password | length > 0
+        fail_msg: >-
+          restic_password is empty. Set it in the vault - an unencrypted
+          repository is not an acceptable default when it contains
+          /var/lib/vaultwarden. Keep a copy outside the vault too: losing this
+          password makes every existing snapshot permanently unreadable.
 
-- name: Install restic
-  apt:
-    name: restic
-    state: present
-  tags:
-    - configure
-    - backup
+    - name: Install restic and its dependencies
+      apt:
+        name:
+          - restic
+          # sqlite3 provides the online .backup API used to take a consistent
+          # copy of the live k3s state database.
+          - sqlite3
+          - curl
+        state: present
 
-- name: Initialize restic repository
-  command: restic init --insecure-no-password
-  args:
-    creates: "{{ restic_repo }}/config"
-  environment:
-    RESTIC_REPOSITORY: "{{ restic_repo }}"
-  tags:
-    - configure
-    - backup
+    - name: Create the password directory
+      file:
+        path: "{{ restic_password_file | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
 
-- name: Deploy backup script
-  template:
-    src: restic-backup.sh.j2
-    dest: "{{ backup_dir }}/restic-backup.sh"
-    mode: "0755"
-  tags:
-    - configure
-    - backup
+    # A file rather than an environment variable: env vars are readable from
+    # /proc for the lifetime of the process.
+    - name: Install the repository password
+      copy:
+        content: "{{ restic_password }}"
+        dest: "{{ restic_password_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
 
-- name: Deploy systemd service unit
-  template:
-    src: restic-backup.service.j2
-    dest: /etc/systemd/system/restic-backup.service
-    mode: "0644"
-  notify: reload systemd
-  tags:
-    - configure
-    - backup
+    - name: Ensure the repository parent directory exists
+      file:
+        path: "{{ restic_repo | dirname }}"
+        state: directory
+        mode: "0700"
+      when: restic_repo.startswith('/')
 
-- name: Deploy systemd timer unit
-  template:
-    src: restic-backup.timer.j2
-    dest: /etc/systemd/system/restic-backup.timer
-    mode: "0644"
-  notify: reload systemd
-  tags:
-    - configure
-    - backup
+    - name: Initialise the restic repository
+      command: restic init
+      args:
+        creates: "{{ restic_repo }}/config"
+      environment:
+        RESTIC_REPOSITORY: "{{ restic_repo }}"
+        RESTIC_PASSWORD_FILE: "{{ restic_password_file }}"
+      when: restic_repo.startswith('/')
 
-- name: Enable and start backup timer
-  systemd:
-    name: restic-backup.timer
-    enabled: yes
-    state: started
-    daemon_reload: yes
-  tags:
-    - configure
-    - backup
+    # `creates:` above skips init when a repository already exists, which is
+    # correct - but says nothing about whether the configured password opens it.
+    # An older repository made with --insecure-no-password will not, and the
+    # first sign was the nightly job failing with "wrong password or no key
+    # found". Fail here instead, with instructions.
+    #
+    # Deliberately does not delete or re-init anything. Destroying a repository
+    # is not something automation should decide.
+    - name: Verify the password opens the repository
+      command: restic cat config
+      environment:
+        RESTIC_REPOSITORY: "{{ restic_repo }}"
+        RESTIC_PASSWORD_FILE: "{{ restic_password_file }}"
+      register: restic_open
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Fail when the repository cannot be opened
+      fail:
+        msg: >-
+          restic cannot open {{ restic_repo }} with the configured password
+          ({{ restic_open.stderr | default('') | trim }}).
+          If this repository predates encryption it was created with
+          --insecure-no-password and cannot be opened with one. Check it holds
+          nothing you need - `restic -r {{ restic_repo }} --insecure-no-password
+          snapshots` - then remove it and re-run, or add a key with
+          `restic key add`.
+      when: restic_open.rc != 0
+
+    - name: Deploy the backup scripts
+      template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - {src: restic-backup.sh.j2, dest: "{{ backup_script }}"}
+        - {src: restic-maintenance.sh.j2, dest: "{{ backup_maintenance_script }}"}
+      loop_control:
+        label: "{{ item.dest }}"
+
+    - name: Deploy the systemd units
+      template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop:
+        - restic-backup.service
+        - restic-backup.timer
+        - restic-maintenance.service
+        - restic-maintenance.timer
+      notify: reload systemd
+
+    # Handlers run at the end of the play, but the timers below need the units
+    # loaded now.
+    - name: Reload systemd before enabling the timers
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable the timers
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+      loop:
+        - restic-backup.timer
+        - restic-maintenance.timer
+
+    - name: Remove the superseded script and its unwritable log
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/backups/restic-backup.sh
+        - /var/log/restic-backup.log
+
+    - name: Warn when the repository shares a disk with the data it protects
+      debug:
+        msg: >-
+          restic_repo is {{ restic_repo }}, on the same filesystem as the data.
+          A disk failure takes both. Point it at an off-host target - restic
+          accepts sftp:, s3:, b2: and rest: URLs with no other change.
+      when: restic_repo.startswith('/')

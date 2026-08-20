@@ -59,6 +59,23 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 50m
+            limits:
+              # Memory only, deliberately. CPU is compressible - a hungry
+              # container gets throttled, it does not kill anything - and a CPU
+              # limit causes latency spikes from throttling even on an idle
+              # node. Memory is not compressible: without a limit, one runaway
+              # container triggers node-level OOM, which kills arbitrary
+              # processes - possibly Pi-hole, taking DNS down for the house.
+              memory: 512Mi
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            periodSeconds: 15
+            failureThreshold: 3
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -101,6 +118,23 @@ spec:
           ports:
             - containerPort: 6379
 
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 25m
+            limits:
+              # Memory only, deliberately. CPU is compressible - a hungry
+              # container gets throttled, it does not kill anything - and a CPU
+              # limit causes latency spikes from throttling even on an idle
+              # node. Memory is not compressible: without a limit, one runaway
+              # container triggers node-level OOM, which kills arbitrary
+              # processes - possibly Pi-hole, taking DNS down for the house.
+              memory: 128Mi
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            periodSeconds: 15
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
@@ -136,7 +170,10 @@ spec:
     spec:
       containers:
         - name: paperless
-          image: ghcr.io/paperless-ngx/paperless-ngx:latest
+          # Pinned to the digest running on 2026-08-20. The tag is kept for
+          # readability; the digest is what actually resolves, so a reschedule
+          # cannot silently change version. Bump deliberately.
+          image: ghcr.io/paperless-ngx/paperless-ngx:latest@sha256:6c86cad803970ea782683a8e80e7403444c5bf3cf70de63b4d3c8e87500db92f
           ports:
             - containerPort: 8000
           env:
@@ -157,7 +194,10 @@ spec:
             - name: PAPERLESS_PORT
               value: "8000"
             - name: PAPERLESS_SECRET_KEY
-              value: changeme-in-vault
+              valueFrom:
+                secretKeyRef:
+                  name: paperless-secret
+                  key: secret-key
             - name: USERMAP_UID
               value: "1000"
             - name: USERMAP_GID
@@ -175,6 +215,31 @@ spec:
             - name: data
               mountPath: /usr/src/paperless/export
               subPath: export
+          resources:
+            requests:
+              memory: 1Gi
+              cpu: 100m
+            limits:
+              # Memory only, deliberately. CPU is compressible - a hungry
+              # container gets throttled, it does not kill anything - and a CPU
+              # limit causes latency spikes from throttling even on an idle
+              # node. Memory is not compressible: without a limit, one runaway
+              # container triggers node-level OOM, which kills arbitrary
+              # processes - possibly Pi-hole, taking DNS down for the house.
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8000
+            periodSeconds: 10
+            # 180s of grace before readiness is believed.
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            periodSeconds: 15
+            failureThreshold: 3
       volumes:
         - name: data
           persistentVolumeClaim:

@@ -1,5 +1,8 @@
 ---
-k3s_version: ""
+# Pinned. Empty meant the installer took whatever was current - and this role
+# re-runs the installer automatically when k3s_extra_flags drift, so an
+# unrelated flag change could have upgraded the cluster as a side effect.
+k3s_version: "v1.36.3+k3s1"
 k3s_extra_flags: ""
 k3s_packages: []
 

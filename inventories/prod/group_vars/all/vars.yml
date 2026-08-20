@@ -9,3 +9,7 @@
 timezone: "Europe/Amsterdam"
 extra_locales:
   - "nl_NL.UTF-8"
+
+# Backups. The repository password lives in the vault; keep a copy elsewhere
+# too, because losing it makes every existing snapshot unreadable.
+restic_password: "{{ vault_restic_password }}"

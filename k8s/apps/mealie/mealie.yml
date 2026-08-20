@@ -33,7 +33,10 @@ spec:
     spec:
       containers:
         - name: mealie
-          image: ghcr.io/mealie-recipes/mealie:latest
+          # Pinned to the digest running on 2026-08-20. The tag is kept for
+          # readability; the digest is what actually resolves, so a reschedule
+          # cannot silently change version. Bump deliberately.
+          image: ghcr.io/mealie-recipes/mealie:latest@sha256:f68e959bf66f4f458893ea58facac71690fe6f2ac7a31466b5cecb41b4e99c02
           ports:
             - containerPort: 9000
           env:
@@ -56,11 +59,15 @@ spec:
               mountPath: /app/data
           resources:
             requests:
-              memory: 256Mi
+              # 470Mi observed. The previous 256Mi request understated it, and
+              # the 512Mi limit left ~8% headroom - one spike from an OOM kill.
+              memory: 512Mi
               cpu: 100m
             limits:
-              memory: 512Mi
-              cpu: 500m
+              # Memory only. The cpu: 500m that used to sit here was the only
+              # CPU limit in the cluster; throttling causes latency spikes even
+              # when the node is idle, and CPU starvation cannot kill a peer.
+              memory: 1Gi
           livenessProbe:
             httpGet:
               path: /api/app/about

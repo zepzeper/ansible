@@ -8,7 +8,7 @@ server:
 user:
     - target: filtered_iptv
       credentials:
-        - username: local
-          password: local123
+        - username: {{ vault_tuliprox_local_username }}
+          password: {{ vault_tuliprox_local_password }}
           proxy: redirect
           server: default

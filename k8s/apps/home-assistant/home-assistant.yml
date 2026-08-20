@@ -6,6 +6,16 @@ metadata:
   namespace: home-assistant
 spec:
   replicas: 1
+  # Recreate, not the default RollingUpdate. /config is a hostPath, and Home
+  # Assistant refuses to start against a config directory another instance
+  # already holds - "Please stop the existing instance before starting a new
+  # one". RollingUpdate starts the new pod before stopping the old one, so the
+  # new one crash-loops forever and the update never completes.
+  #
+  # This applies to any workload with hostPath or a ReadWriteOnce PVC. Every
+  # other deployment here already had it.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: home-assistant
@@ -16,12 +26,40 @@ spec:
     spec:
       containers:
         - name: home-assistant
-          image: ghcr.io/home-assistant/home-assistant:stable
+          # Pinned to the digest running on 2026-08-20. The tag is kept for
+          # readability; the digest is what actually resolves, so a reschedule
+          # cannot silently change version. Bump deliberately.
+          image: ghcr.io/home-assistant/home-assistant:stable@sha256:59aa8824955c9db491b75d2eebe42bd68494f80c2ec69ec0d66d9dae37d37514
           ports:
             - containerPort: 8123
           volumeMounts:
             - name: config
               mountPath: /config
+          resources:
+            requests:
+              memory: 768Mi
+              cpu: 100m
+            limits:
+              # Memory only, deliberately. CPU is compressible - a hungry
+              # container gets throttled, it does not kill anything - and a CPU
+              # limit causes latency spikes from throttling even on an idle
+              # node. Memory is not compressible: without a limit, one runaway
+              # container triggers node-level OOM, which kills arbitrary
+              # processes - possibly Pi-hole, taking DNS down for the house.
+              memory: 1536Mi
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8123
+            periodSeconds: 10
+            # 180s of grace before readiness is believed.
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8123
+            periodSeconds: 15
+            failureThreshold: 3
       volumes:
         - name: config
           hostPath:

@@ -1,0 +1,14 @@
+[Unit]
+Description=Assert node health invariants
+OnFailure=alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/node-health
+User=root
+Group=root
+CacheDirectory=restic
+ProtectSystem=strict
+ProtectHome=read-only
+NoNewPrivileges=true
+IOSchedulingClass=idle
