@@ -1,20 +1,12 @@
 ---
-# Staging stands in for the vault so CI needs no secret to converge. These names
-# must track roles' vault_* references; the tags CI check fails if a role gains a
-# new one that is not defined here.
-vault_k3s_token: "staging-not-a-real-token"
-vault_tailscale_authkey: "tskey-staging-not-real"
-vault_cloudflare_api_token: "staging-not-a-real-token"
-vault_homepage_homeassistant_token: "staging"
-vault_homepage_mealie_token: "staging"
-vault_homepage_prowlarr_token: "staging"
-vault_homepage_qbittorrent_password: "staging"
-vault_homepage_qbittorrent_username: "staging"
-vault_homepage_readarr_token: "staging"
-vault_homepage_uptime_kuma_token: "staging"
-vault_tuliprox_password: "staging"
-vault_tuliprox_remote_url: "https://example.invalid/staging"
-vault_tuliprox_username: "staging"
+# Staging runs only baseline, hardening, firewall and resolver - none of which
+# reference a vault variable, so there are no stand-ins here to maintain. The
+# previous placeholders were dead config, and one of them looked enough like a
+# real Tailscale key to trip GitHub's secret scanner on every push.
+#
+# A play that does need vault values will fail against this inventory with a
+# clear "variable is undefined", which is better than silently converging with
+# fake credentials.
 
 server_hostname: "ds10u-staging"
 admin_username: "zepzeper"
