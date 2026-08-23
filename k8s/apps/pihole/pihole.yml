@@ -82,6 +82,10 @@ metadata:
     metallb.io/loadBalancerIPs: 192.168.1.2
 spec:
   type: LoadBalancer
+  # NOTE: externalTrafficPolicy: Local was tried here to preserve real client
+  # IPs (Pi-hole otherwise attributes every query to the cni0 bridge,
+  # 10.42.0.1). It broke DNS for the whole LAN - the VIP stopped answering on
+  # :53 - so it is reverted to Cluster until the cause is understood.
   selector:
     app: pihole
   ports:

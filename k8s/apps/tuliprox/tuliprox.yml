@@ -66,7 +66,9 @@ spec:
               mountPath: /app/backup
           resources:
             requests:
-              memory: 128Mi
+              # Idle is ~40Mi RSS. The request covers the resting state; the
+              # limit below is what carries the update spike.
+              memory: 256Mi
               cpu: 50m
             limits:
               # Memory only, deliberately. CPU is compressible - a hungry
@@ -75,7 +77,15 @@ spec:
               # node. Memory is not compressible: without a limit, one runaway
               # container triggers node-level OOM, which kills arbitrary
               # processes - possibly Pi-hole, taking DNS down for the house.
-              memory: 256Mi
+              #
+              # Sized from a measured cgroup memory.peak of 1636Mi during a full
+              # update: a ~93MB XMLTV EPG parsed with fuzzy smart-matching over
+              # the whole Xtream catalogue (live + VOD + series, nothing
+              # skipped). config.yml sets update_on_boot, so this spike happens
+              # on every start, not just on the 06:00/18:00 schedules - too low
+              # a limit means the pod can never reach Ready at all. 2560Mi keeps
+              # ~55% headroom for catalogue growth; revisit if the EPG grows.
+              memory: 2560Mi
           readinessProbe:
             tcpSocket:
               port: 8080

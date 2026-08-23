@@ -272,11 +272,11 @@
 # would make `kustomize build` require network access, including in CI.
 ###############################################################################
 
-# Without this the controller copies its own LoadBalancer IP (a LAN address) into
-# every Ingress status, external-dns publishes that, and any client on that LAN
-# bypasses Tailscale to reach it. --publish-service and --publish-status-address
-# are mutually exclusive; the controller exits at startup if both are set.
-- name: Publish the Tailscale address into every Ingress status
+# Pins exactly which address external-dns writes to Cloudflare, rather than
+# letting the controller copy whatever its Service happens to carry.
+# --publish-service and --publish-status-address are mutually exclusive; the
+# controller exits at startup if both are set.
+- name: Publish ingress_status_address into every Ingress status
   shell: |
     set -euo pipefail
     desired="--publish-status-address={{ ingress_status_address }}"
@@ -301,7 +301,7 @@
     - deploy
     - ingress
 
-- name: Pin the ingress-nginx VIP and serve it on the Tailscale address
+- name: Pin the ingress-nginx VIP and also serve it on the Tailscale address
   kubernetes.core.k8s:
     state: patched
     kind: Service
@@ -312,12 +312,14 @@
         annotations:
           metallb.io/loadBalancerIPs: "{{ ingress_lan_address }}"
       spec:
-        # The MetalLB VIP is announced by ARP and answers only on the LAN. Every
-        # Ingress status advertises the Tailscale address, so kube-proxy has to
-        # accept traffic for it too or tailnet clients resolve a name and then
-        # hit a closed port.
+        # The MetalLB VIP is announced by ARP and answers only on the LAN, so
+        # kube-proxy has to be told to accept traffic for the Tailscale address
+        # too - otherwise a tailnet client addressing the node by its Tailscale
+        # IP hits a closed port. Deliberately not ingress_status_address: DNS
+        # publishes the LAN VIP (see that var), while this keeps the tailnet
+        # address served for anyone who targets it directly.
         externalIPs:
-          - "{{ ingress_status_address }}"
+          - "{{ ingress_tailscale_address }}"
   tags:
     - deploy
     - ingress

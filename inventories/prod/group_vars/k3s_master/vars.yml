@@ -20,12 +20,29 @@ firewall_udp_ports:
   - 53       # CoreDNS
 
 # Address published into every Ingress .status by the nginx controller, and
-# therefore the address external-dns writes to Cloudflare. This is the master's
-# Tailscale IP on purpose: it resolves to the same host on and off the LAN, so
-# clients never depend on the advertised 192.168.1.0/24 subnet route (which a
-# device physically on that LAN will always ignore in favour of its own
-# interface route).
-ingress_status_address: "100.117.255.24"
+# therefore the address external-dns writes to Cloudflare.
+#
+# This was the Tailscale IP (100.117.255.24) between 2026-08-19 and 2026-08-23,
+# on the reasoning that one address resolves the same on and off the LAN. The
+# cost was not obvious: 100.64.0.0/10 is CGNAT and routable only from inside the
+# tailnet, so the public record became useless to any LAN device that does not
+# ask Pi-hole for it. Pi-hole's split-horizon override hid that from every
+# machine that does. Chromecasts ignore DHCP-supplied DNS and query 8.8.8.8
+# directly, so they got the CGNAT address and could not open a connection at
+# all - TiviMate failed with no server-side log line, because nothing arrived.
+#
+# The LAN VIP serves both audiences instead: LAN clients reach it directly, and
+# tailnet clients reach it over the 192.168.1.0/24 subnet route this node
+# already advertises (k3s_advertise_routes, live as a PrimaryRoute). A tailnet
+# client physically on this LAN ignores that route in favour of its own
+# interface route, which lands on the same address anyway.
+ingress_status_address: "{{ ingress_lan_address }}"
+
+# Still pinned onto the controller Service as an externalIP, so kube-proxy keeps
+# accepting traffic addressed to the Tailscale IP directly. MetalLB announces
+# only the LAN VIP by ARP, so without this a tailnet client hitting the node's
+# Tailscale address by IP would reach a closed port. Not published to DNS.
+ingress_tailscale_address: "100.117.255.24"
 
 # The ingress-nginx MetalLB VIP, pinned so the Pi-hole split-horizon overrides
 # point at a stable address. Must sit inside the MetalLB pool in

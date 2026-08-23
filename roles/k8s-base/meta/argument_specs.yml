@@ -29,7 +29,11 @@ argument_specs:
       ingress_status_address:
         type: str
         required: true
-        description: Address published into every Ingress status, and served via externalIPs.
+        description: Address published into every Ingress status, and thus into DNS.
+      ingress_tailscale_address:
+        type: str
+        required: true
+        description: Tailscale address served via externalIPs on the controller Service.
       ingress_lan_address:
         type: str
         required: true

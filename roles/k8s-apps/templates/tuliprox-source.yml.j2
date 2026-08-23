@@ -32,7 +32,10 @@ sources:
         persist: "./playlist_"
         epg:
           sources:
-            - url: {{ vault_tuliprox_remote_url }}
+            # The bare base URL 401s - the provider only serves XMLTV from
+            # /xmltv.php with the same credentials as the Xtream input. Quoted
+            # because the query string's "&" would otherwise need escaping.
+            - url: "{{ vault_tuliprox_remote_url }}/xmltv.php?username={{ vault_tuliprox_username }}&password={{ vault_tuliprox_password }}"
               priority: 0
               logo_override: false
           smart_match:
@@ -51,6 +54,11 @@ sources:
             skip_live_direct_source: true
             skip_video_direct_source: true
             skip_series_direct_source: true
+          # Clients added as an M3U playlist (TiviMate on the Chromecasts) fetch
+          # /get.php, which is served only when an m3u output exists - with the
+          # xtream output alone it returned 204 No Content, so those clients got
+          # an empty playlist while the Xtream API worked fine.
+          - type: m3u
         filter: "(!NL_ALL! OR !EN_ALL! OR !A_ALL!) AND NOT(Title ~ \"!ADULT_CONTENT!\")"
         sort:
           match_as_ascii: true
