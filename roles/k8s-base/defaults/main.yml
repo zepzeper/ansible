@@ -11,23 +11,51 @@ k8s_tree: "{{ playbook_dir }}/../k8s"
 
 # Upstream components pinned by URL. Fetched to disk and applied with the module
 # so a download failure is distinguishable from an apply failure.
+#
+# ingress-nginx is pinned to controller-v1.15.1, and that pin is terminal: the
+# project was retired and its repository archived read-only in March 2026, so
+# 1.15.1 is the last release that will ever exist. There will be no further
+# security patches. The raw URL keeps resolving because archived repositories
+# stay readable.
+#
+# It was on controller-v1.9.4 (November 2023) until 2026-08-23, which predated
+# the IngressNightmare disclosures - CVE-2025-1974 with CVE-2025-1097, 1098 and
+# 24514 - an unauthenticated RCE chain through the admission webhook, fixed in
+# 1.11.5 and 1.12.1. Nothing here is reachable from the internet, so the
+# exposure was any pod in the cluster rather than the world, but the admission
+# webhook is reachable from all of them.
+#
+# Moving off ingress-nginx entirely is the real fix and is not a version bump:
+# the successor project InGate was itself retired, so the destinations are a
+# Gateway API implementation or F5's separate nginxinc/kubernetes-ingress. That
+# is a migration to plan, not a pin to edit.
 k8s_upstream_components:
   - name: cert-manager
-    url: https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
+    url: https://github.com/cert-manager/cert-manager/releases/download/v1.21.1/cert-manager.yaml
   - name: metallb
     url: https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
   - name: ingress-nginx
-    url: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml
+    url: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/cloud/deploy.yaml
 
+# Read back out of the pinned URL rather than restated, so the upgrade guard in
+# tasks/main.yml has something to compare the running controller against without
+# creating a second place to edit the version.
+ingress_nginx_version: "{{ (k8s_upstream_components | selectattr('name', 'equalto', 'ingress-nginx') | first).url | regex_search('controller-(v[0-9]+\\.[0-9]+\\.[0-9]+)', '\\1') | first }}"
+
+# Exactly the two namespaces that consume it: cert-manager's ClusterIssuer for
+# the DNS-01 solver, and external-dns for record writes.
+#
+# This listed eleven namespaces until 2026-08-23, so nine copies of a token that
+# controls the whole krugten.org zone sat in namespaces that never read it -
+# readable by any pod scheduled there, including the media and paperless
+# workloads, which are the ones that ingest the most outside input. The token
+# can redirect any record in the zone or mint a certificate for any name under
+# it, so the blast radius was the domain, not the namespace.
+#
+# Note this role only creates secrets. Shortening this list stops new copies
+# appearing; it does not remove the nine already in the cluster. Delete those by
+# hand, then rotate the token - it has been resident where it had no business
+# being.
 k8s_cloudflare_secret_namespaces:
   - cert-manager
   - external-dns
-  - home-assistant
-  - pihole
-  - tuliprox
-  - homepage
-  - mealie
-  - kuma
-  - books
-  - media
-  - paperless

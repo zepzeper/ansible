@@ -8,3 +8,19 @@ resolver_fallback: ""
 # out, so resolv.conf holds only resolver_primary/resolver_fallback. glibc reads
 # at most MAXNS (3) servers, so a router-supplied duplicate wastes a slot.
 resolver_exclusive: false
+
+# Interfaces dhcpcd must not manage.
+#
+# tailscale0 was here first, because a dhcpcd rebind strips its address and the
+# node falls off the tailnet. The container interfaces are the same class of
+# problem discovered the hard way: every pod start and stop creates or destroys
+# a veth, dhcpcd treats each one as an interface event, and regenerating its
+# state rewrites /etc/resolv.conf. There is a window in that rewrite with no
+# usable nameserver.
+#
+# It is not rare. ds10u logged 321 dhcpcd veth events in two hours, and one of
+# them landed underneath an Ansible get_url, which failed all three retries with
+# "Temporary failure in name resolution" while both configured resolvers were
+# answering perfectly when queried directly. Anything on the node that resolves
+# a name - image pulls included - can lose the same coin flip.
+resolver_deny_interfaces: "tailscale0 veth* cni* flannel* kube-bridge* docker*"

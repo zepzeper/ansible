@@ -11,6 +11,24 @@
     - deploy
     - k3s
 
+# k3s merges /etc/rancher/k3s/config.yaml with the flags in the unit, so a file
+# there is a second input to settings this repo believes it controls alone
+# through k3s_extra_flags. One was found on ds10u carrying `disable: [traefik]`,
+# written by nothing in this repo - harmless only because it happened to agree
+# with the unit, which already passes --disable traefik --disable servicelb.
+#
+# Removing it is safe for exactly that reason: the flags it duplicated are
+# already on the command line, so nothing changes at the next restart. If a
+# setting genuinely belongs in a config file rather than a flag, add it to
+# k3s_extra_flags instead and keep one source of truth.
+- name: Remove the unmanaged k3s config file
+  file:
+    path: /etc/rancher/k3s/config.yaml
+    state: absent
+  tags:
+    - deploy
+    - k3s
+
 - name: Download k3s install script
   get_url:
     url: https://get.k3s.io
@@ -63,6 +81,9 @@
   # The token is interpolated into the environment, so without this it
   # appears in task output on failure and under -v.
   no_log: true
+  # Guarded by the `when` above, so reaching this task means the flags really
+  # did drift and the installer really is rewriting the unit.
+  changed_when: true
   tags:
     - deploy
     - k3s

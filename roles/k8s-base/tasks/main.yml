@@ -92,10 +92,24 @@
     - deploy
     - cluster
 
+# force is what makes the pins above mean anything. get_url defaults to
+# force: no, which skips the download whenever the destination already exists -
+# so editing a pinned URL left the previous release sitting in the cache and the
+# apply below kept installing it. Changing the cert-manager pin from v1.14.4 to
+# v1.21.1 was a no-op for exactly this reason, silently, with a green recap.
+#
+# ingress-nginx happened to update anyway because raw.githubusercontent.com
+# sends Last-Modified and Ansible will re-fetch on that; the GitHub release
+# asset cert-manager is served from does not, which is why one moved and the
+# other did not. Relying on that difference is not a pinning strategy.
+#
+# Re-downloading every run is cheap and still reports change honestly: the
+# module compares content and only says changed when the file actually differs.
 - name: Fetch upstream component manifests
   get_url:
     url: "{{ item.url }}"
     dest: "/opt/k8s-upstream/{{ item.name }}.yaml"
+    force: true
     mode: "0644"
   loop: "{{ k8s_upstream_components }}"
   loop_control:
@@ -169,9 +183,92 @@
     - deploy
     - loadbalancer
 
+# The upstream manifest ships two one-shot Jobs that mint the admission
+# webhook's certificate. Job.spec.template is immutable, so applying a manifest
+# whose Jobs carry a newer certgen image is rejected outright - "field is
+# immutable" - and the apply fails before the controller is touched at all.
+# That is not an edge case, it is what every version bump does, and a bump that
+# always fails is a bump nobody repeats: this cluster sat on controller-v1.9.4
+# from June until 2026-08-23 with IngressNightmare unpatched.
+#
+# Deleting them is safe. Both Jobs ran to completion months ago, and the Secret
+# they produced (ingress-nginx-admission) is a separate object that outlives
+# them - the apply below recreates the Jobs and they reissue the certificate.
+#
+# Guarded on a real version change so an ordinary converge stays a no-op rather
+# than deleting and recreating two Jobs on every run.
+- name: Read the running ingress-nginx controller
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: ingress-nginx
+    name: ingress-nginx-controller
+  register: ingress_running
+  tags:
+    - deploy
+    - ingress
+
+- name: Clear the completed admission jobs when the pinned version changed
+  kubernetes.core.k8s:
+    state: absent
+    kind: Job
+    namespace: ingress-nginx
+    name: "{{ item }}"
+  loop:
+    - ingress-nginx-admission-create
+    - ingress-nginx-admission-patch
+  when:
+    - ingress_running.resources | length > 0
+    - ingress_nginx_version not in
+      ingress_running.resources[0].spec.template.spec.containers[0].image
+  tags:
+    - deploy
+    - ingress
+
+# --publish-service and --publish-status-address are mutually exclusive - the
+# controller exits at startup if both are set - so this swaps one for the other
+# in the manifest before it is applied, rather than applying upstream's choice
+# and then patching it back afterwards.
+#
+# The patch-afterwards version rolled the controller on every single k8s-base
+# run: the apply reset args to upstream's, the patch set them back, and the
+# Deployment changed twice per converge. That was not just noise. Each roll
+# briefly emptied every Ingress .status, external-dns read that as "no records
+# wanted" and deleted the whole zone, and public resolvers cached the resulting
+# NODATA for 1800s. external-dns is now upsert-only so it cannot delete, but the
+# roll itself should not have been happening either.
+#
+# Rendering into a separate file keeps the fetched copy pristine, so get_url
+# stays idempotent and this task reports change only when the rendered output
+# actually differs.
+- name: Render the ingress-nginx manifest with our status-publishing flag
+  # cmd: rather than free-form, because the shell module parses a free-form
+  # string for key=value module arguments and a line like `src=...` is read as
+  # one, failing the play before the script ever runs.
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      upstream=/opt/k8s-upstream/ingress-nginx.yaml
+      rendered=/opt/k8s-upstream/ingress-nginx.rendered.yaml
+      tmp=$(mktemp)
+      sed -E 's|^([[:space:]]+)- --publish-service=.*$|\1- --publish-status-address={{ ingress_status_address }}|' \
+        "$upstream" > "$tmp"
+      # Fail loudly rather than silently shipping upstream's flag if the arg is
+      # ever renamed or reformatted upstream.
+      grep -qF -- '--publish-status-address={{ ingress_status_address }}' "$tmp"
+      if cmp -s "$tmp" "$rendered"; then
+        rm -f "$tmp"; echo UNCHANGED
+      else
+        mv "$tmp" "$rendered"; chmod 0644 "$rendered"; echo RENDERED
+      fi
+  register: ing_render
+  changed_when: "'RENDERED' in ing_render.stdout"
+  tags:
+    - deploy
+    - ingress
+
 - name: Apply nginx-ingress
   kubernetes.core.k8s:
-    src: /opt/k8s-upstream/ingress-nginx.yaml
+    src: /opt/k8s-upstream/ingress-nginx.rendered.yaml
     apply: true
     state: present
     server_side_apply:
@@ -271,35 +368,6 @@
 # applied rather than being Kustomize patches over a remote base - a remote base
 # would make `kustomize build` require network access, including in CI.
 ###############################################################################
-
-# Pins exactly which address external-dns writes to Cloudflare, rather than
-# letting the controller copy whatever its Service happens to carry.
-# --publish-service and --publish-status-address are mutually exclusive; the
-# controller exits at startup if both are set.
-- name: Publish ingress_status_address into every Ingress status
-  shell: |
-    set -euo pipefail
-    desired="--publish-status-address={{ ingress_status_address }}"
-    current=$(kubectl -n ingress-nginx get deployment ingress-nginx-controller \
-      -o jsonpath='{.spec.template.spec.containers[0].args}')
-    if printf '%s' "$current" | grep -qF -- "$desired" &&
-      ! printf '%s' "$current" | grep -qF -- "--publish-service="; then
-      echo UNCHANGED
-      exit 0
-    fi
-    new_args=$(kubectl -n ingress-nginx get deployment ingress-nginx-controller -o json \
-      | jq -c --arg d "$desired" \
-        '[.spec.template.spec.containers[0].args[]
-          | select(startswith("--publish-status-address=") | not)
-          | select(startswith("--publish-service=") | not)] + [$d]')
-    kubectl -n ingress-nginx patch deployment ingress-nginx-controller --type=json \
-      -p "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/args\",\"value\":$new_args}]"
-    echo PATCHED
-  register: ing_publish
-  changed_when: "'PATCHED' in ing_publish.stdout"
-  tags:
-    - deploy
-    - ingress
 
 - name: Pin the ingress-nginx VIP and also serve it on the Tailscale address
   kubernetes.core.k8s:

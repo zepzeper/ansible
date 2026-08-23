@@ -36,26 +36,45 @@
     - deploy
     - home-assistant
 
+# services.yaml carries eight credentials - the Pi-hole password, six service
+# API tokens and the qBittorrent login - so this loop needs the same treatment
+# as the TuliProx one below, in both directions.
+#
+# no_log, because `make check` runs --check --diff and a template diff prints
+# the rendered file in full: a dry run was enough to spill all eight to the
+# terminal and into any CI log that captured it.
+#
+# 0640 rather than 0644, because no_log only protects them in transit. The file
+# was world-readable on the host and could be read without sudo. The container
+# runs as root, so dropping the world bit costs nothing.
 - name: Create Homepage config files
   template:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
-    mode: "0644"
+    owner: root
+    group: root
+    mode: "0640"
   loop:
     - {src: homepage-settings.yaml.j2, dest: /var/lib/homepage/settings.yaml}
     - {src: homepage-services.yaml.j2, dest: /var/lib/homepage/services.yaml}
     - {src: homepage-bookmarks.yaml.j2, dest: /var/lib/homepage/bookmarks.yaml}
     - {src: homepage-widgets.yaml.j2, dest: /var/lib/homepage/widgets.yaml}
     - {src: homepage-kubernetes.yaml.j2, dest: /var/lib/homepage/kubernetes.yaml}
+  no_log: true
   tags:
     - deploy
     - homepage
 
+# source.yml holds the IPTV provider credentials and api-proxy.yml the local
+# proxy login. no_log already kept them out of task output; 0640 keeps them off
+# a world-readable path on disk. The container runs as root.
 - name: Create TuliProx config files
   template:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
-    mode: "0644"
+    owner: root
+    group: root
+    mode: "0640"
   loop:
     - {src: tuliprox-source.yml.j2, dest: /var/lib/tuliprox/config/source.yml}
     - {src: tuliprox-config.yml.j2, dest: /var/lib/tuliprox/config/config.yml}

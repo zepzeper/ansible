@@ -79,11 +79,11 @@
     - configure
     - dns
 
-- name: Keep dhcpcd off the tailscale interface
+- name: Keep dhcpcd off the tailscale and container interfaces
   lineinfile:
     path: /etc/dhcpcd.conf
     regexp: '^denyinterfaces\s'
-    line: "denyinterfaces tailscale0"
+    line: "denyinterfaces {{ resolver_deny_interfaces }}"
     backup: yes
   when:
     - resolver_primary | length > 0

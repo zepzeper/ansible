@@ -87,6 +87,9 @@
   # The pre-auth key is on the command line, so without this it is echoed in
   # task output on failure and under -v.
   no_log: true
+  # Only runs on a node that is not already Running on the tailnet, so getting
+  # here means the node is being joined.
+  changed_when: true
   tags:
     - configure
     - network

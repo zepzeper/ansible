@@ -1,4 +1,14 @@
 ---
+# A dedicated account rather than the namespace default. The binding below
+# grants cluster-wide read on services, endpoints, pods, nodes and ingresses;
+# on `default` that is inherited by anything else ever scheduled into this
+# namespace, which is not a property you want a namespace to have.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-dns
+  namespace: external-dns
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -21,7 +31,7 @@ roleRef:
   name: external-dns
 subjects:
   - kind: ServiceAccount
-    name: default
+    name: external-dns
     namespace: external-dns
 ---
 apiVersion: apps/v1
@@ -41,6 +51,7 @@ spec:
       labels:
         app: external-dns
     spec:
+      serviceAccountName: external-dns
       containers:
         - name: external-dns
           image: registry.k8s.io/external-dns/external-dns:v0.15.1
@@ -48,6 +59,29 @@ spec:
             - --source=ingress
             - --provider=cloudflare
             - --domain-filter=krugten.org
+            # Never delete, only create and update. The default policy is sync,
+            # which deletes any record it cannot currently justify - and the
+            # ingress-nginx controller rolls on every k8s-base run (the
+            # publish-status-address patch rewrites its args), briefly emptying
+            # every Ingress .status. external-dns reads that as "no records
+            # wanted" and removes the lot, then recreates them seconds later.
+            #
+            # The recreate does not undo the damage: public resolvers have by
+            # then cached NODATA for the zone's SOA minimum, 1800s. Observed on
+            # 2026-08-23 - every krugten.org name returned NXDOMAIN-shaped empty
+            # answers from 8.8.8.8 and 1.1.1.1 for half an hour while Cloudflare
+            # held the correct values all along. LAN clients never noticed,
+            # because Pi-hole answers these names from its own override file;
+            # the Chromecasts did, because they ignore DHCP DNS and ask 8.8.8.8.
+            #
+            # The cost of upsert-only is that a deleted Ingress leaves a stale
+            # record behind, to be removed by hand. That is the better failure:
+            # a name that resolves to nothing beats every name resolving to
+            # nothing.
+            - --policy=upsert-only
+            # Pin ownership explicitly rather than relying on the default, so a
+            # restarted pod recognises the TXT registry records it already owns.
+            - --txt-owner-id=ds10u
           resources:
             requests:
               memory: 64Mi

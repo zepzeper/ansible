@@ -46,7 +46,12 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16
+          # Digest is the one this cluster has been running; pinning it here
+          # changes nothing today and stops the tag moving underneath a
+          # database on the next pod reschedule. postgres:16 tracks every
+          # 16.x patch, so a restart could otherwise land on a different
+          # minor with different defaults, unannounced.
+          image: postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5
           ports:
             - containerPort: 5432
           env:
@@ -114,7 +119,7 @@ spec:
     spec:
       containers:
         - name: redis
-          image: redis:7
+          image: redis:7@sha256:e9b2e45ecd47fbb69b877cf8d045d5cccaaaed52524b6e098b4abe8212994f73
           ports:
             - containerPort: 6379
 

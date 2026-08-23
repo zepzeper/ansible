@@ -1,8 +1,16 @@
 # Managed by Ansible (roles/k8s-apps). Edits on the host will be overwritten.
 #
-# Public DNS answers these names with the master's Tailscale address, which is
-# reachable from anywhere but only by tailnet members. LAN clients that are not
-# on the tailnet get the ingress VIP from here instead.
+# No longer a split horizon, despite the filename. It was written when public
+# DNS answered these names with the master's Tailscale address, unreachable
+# outside the tailnet, so LAN clients needed the ingress VIP from here instead.
+# Since 2026-08-23 external-dns publishes that same VIP (ingress_status_address
+# now resolves to ingress_lan_address), so both sides return one address and
+# this file agrees with the public record rather than overriding it.
+#
+# Kept because it is still load-bearing in one direction: these names keep
+# resolving on the LAN when Cloudflare, external-dns or the uplink is down, and
+# a query answered locally never leaves the house. Delete it only if you are
+# content for internal name resolution to depend on an external record.
 #
 # Leaf hostnames are listed individually on purpose: dnsmasq's address=/domain/
 # also matches the apex, and krugten.org itself is a GitHub Pages site that must

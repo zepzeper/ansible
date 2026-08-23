@@ -12,7 +12,11 @@ k8s_app_deployments:
   - {namespace: home-assistant, deploy: home-assistant}
   - {namespace: vaultwarden, deploy: vaultwarden}
   - {namespace: mealie, deploy: mealie}
-  - {namespace: kuma, deploy: uptimekuma}
+  # The Deployment is named kuma, not uptimekuma - only the directory and the
+  # manifest file carry the product name. This entry said uptimekuma, so the
+  # readiness gate waited 120s for an object that does not exist and reported
+  # Kuma not ready on every single apps deploy.
+  - {namespace: kuma, deploy: kuma}
   - {namespace: homepage, deploy: homepage}
   - {namespace: tuliprox, deploy: tuliprox}
   - {namespace: books, deploy: calibre}

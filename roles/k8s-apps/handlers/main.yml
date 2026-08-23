@@ -1,3 +1,6 @@
 ---
 - name: restart pihole
   command: kubectl -n pihole rollout restart deployment/pihole
+  # Notified only when the split-horizon file changed, and a rollout restart
+  # always rolls the deployment.
+  changed_when: true

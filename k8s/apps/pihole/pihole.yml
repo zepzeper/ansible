@@ -34,6 +34,18 @@ spec:
             # horizon overrides are written into that directory.
             - name: FTLCONF_misc_etc_dnsmasq_d
               value: "true"
+            # Pairs with externalTrafficPolicy: Local on the Service below -
+            # neither works without the other. The pod's only interface is its
+            # 10.42.0.x/24 cni0 address, so the default listeningMode of LOCAL
+            # ("answer only hosts on a subnet one of my interfaces is on")
+            # treats 10.42.0.0/24 as the entire local network and silently
+            # drops everything else. Under externalTrafficPolicy: Cluster that
+            # is invisible, because kube-proxy SNATs every query to 10.42.0.1
+            # before Pi-hole sees it. Preserve the real source address without
+            # setting this and Pi-hole ignores the whole LAN - no refusal, no
+            # log line, just DNS gone for the house.
+            - name: FTLCONF_dns_listeningMode
+              value: "ALL"
           ports:
             - containerPort: 53
               protocol: TCP
@@ -63,6 +75,31 @@ spec:
               port: 8080
             periodSeconds: 15
             failureThreshold: 3
+          # Readiness only removes a pod from its Service; it never restarts
+          # anything. An FTL that has wedged while still holding :53 open stays
+          # Ready forever and keeps taking every DNS query in the house.
+          #
+          # A real query rather than a TCP connect, because holding the socket
+          # open is exactly the failure a connect cannot see. pi.hole is served
+          # from Pi-hole's own records, so this stays green during an upstream
+          # outage and only trips when FTL itself stops answering - dig exits 0
+          # on any reply including NXDOMAIN, and 9 when nothing comes back.
+          #
+          # Deliberately slack: 30s x 3 means ~90s of silence before a restart,
+          # well clear of a slow start or a gravity update.
+          livenessProbe:
+            exec:
+              command:
+                - dig
+                - +short
+                - +tries=1
+                - +time=3
+                - "@127.0.0.1"
+                - pi.hole
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: etc
           hostPath:
@@ -82,10 +119,15 @@ metadata:
     metallb.io/loadBalancerIPs: 192.168.1.2
 spec:
   type: LoadBalancer
-  # NOTE: externalTrafficPolicy: Local was tried here to preserve real client
-  # IPs (Pi-hole otherwise attributes every query to the cni0 bridge,
-  # 10.42.0.1). It broke DNS for the whole LAN - the VIP stopped answering on
-  # :53 - so it is reverted to Cluster until the cause is understood.
+  # Without this kube-proxy SNATs every inbound query to the cni0 bridge, so
+  # the dashboard attributes all traffic to 10.42.0.1 and per-client stats and
+  # per-client blocking are both unusable.
+  #
+  # This was tried alone once and took DNS down for the whole LAN; the missing
+  # half was FTLCONF_dns_listeningMode above, which must be ALL for Pi-hole to
+  # answer a source address outside the pod subnet. Do not set one without the
+  # other.
+  externalTrafficPolicy: Local
   selector:
     app: pihole
   ports:

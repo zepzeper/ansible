@@ -11,3 +11,18 @@
     if systemctl is-active --quiet tailscaled; then
       systemctl restart tailscaled
     fi
+  # Only ever reached when a rules file actually changed, and restoring the
+  # table is a change by definition - there is nothing to compare against.
+  changed_when: true
+  # What this costs, measured on 2026-08-23: DNS was unavailable to the LAN for
+  # 16 seconds. The restore replaces the whole filter table, so all ~38 KUBE-*
+  # and FLANNEL-* chains the cluster maintains go with it. flannel and
+  # kube-router notice and rebuild theirs inside a minute, which is what brings
+  # DNS back, and kube-router's network policies come back with it.
+  #
+  # kube-proxy does not notice. Only the filter table is flushed, its nat-table
+  # canary survives, and so KUBE-FORWARD and KUBE-FIREWALL stay missing until
+  # k3s restarts or the host reboots. Traffic keeps flowing on FLANNEL-FWD,
+  # which accepts anything to or from the pod CIDR - so the node works, but on
+  # flannel's blanket rule rather than kube-proxy's own. Worth knowing before
+  # assuming this handler leaves the node exactly as it found it.

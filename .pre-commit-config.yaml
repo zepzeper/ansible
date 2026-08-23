@@ -5,4 +5,4 @@ repos:
     hooks:
       - id: ansible-lint
         files: \.(yaml|yml)$
-        exclude: kubernetes-manifests/|\.github/|preseed/
+        exclude: k8s/|\.github/|preseed/

@@ -28,3 +28,10 @@ argument_specs:
         description:
           - Stop the DHCP client appending the nameservers the router hands out.
             glibc reads at most three, so a duplicate wastes a slot.
+      resolver_deny_interfaces:
+        type: str
+        description:
+          - Space-separated interface patterns dhcpcd must leave alone. Must
+            cover the container network interfaces on a Kubernetes node, or pod
+            churn rewrites /etc/resolv.conf and name resolution fails
+            intermittently for everything on the host.
