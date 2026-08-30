@@ -66,6 +66,10 @@ flowchart LR
 
 All LAN devices get `192.168.1.2` as DNS via DHCP. Pi-hole handles ad-blocking and local DNS. ExternalDNS syncs ingress hostnames to Cloudflare DNS.
 
+Devices **away from home** reach the same Pi-hole through Tailscale. The tailnet's DNS page lists `100.117.255.24` as a global nameserver with *Override local DNS* enabled, so every connected client sends its lookups to Pi-hole regardless of what the local network offered. That address is served by an `externalIPs` entry on the Pi-hole Service — the MetalLB VIP `192.168.1.2` is announced by ARP and answers on the LAN only, which would otherwise make remote filtering depend on each client accepting the `192.168.1.0/24` subnet route.
+
+This does not run through the exit node. Advertising `ds10u` as an exit node was the original mechanism, on the mistaken belief that custom global nameservers were a paid feature; it left the DNS page empty and remote devices unfiltered. The exit node is still advertised, but DNS no longer depends on it.
+
 ### TLS
 
 `cert-manager` with `letsencrypt-prod` ClusterIssuer handles automatic TLS for all ingress hosts. It uses DNS01 challenge via Cloudflare API token for wildcard/proof of domain ownership.

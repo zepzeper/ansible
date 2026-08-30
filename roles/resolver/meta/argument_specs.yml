@@ -35,3 +35,13 @@ argument_specs:
             cover the container network interfaces on a Kubernetes node, or pod
             churn rewrites /etc/resolv.conf and name resolution fails
             intermittently for everything on the host.
+      resolver_deny_ra_dns:
+        type: bool
+        default: false
+        description:
+          - Refuse IPv6 Router Advertisements so the router's advertised RDNSS
+            nameserver never reaches resolv.conf. resolver_exclusive does not
+            cover this - it only suppresses the DHCPv4 option, while RDNSS
+            arrives in an RA and no DHCP option is involved. Costs the host its
+            SLAAC address on that interface, so confirm nothing routable
+            depends on it first.

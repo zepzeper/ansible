@@ -59,12 +59,13 @@
 # that template stays terse on purpose - prose there ends up in the live file
 # that someone reads while debugging DNS at 2am. The reasoning instead:
 #
-# Pi-hole must be first for this host's own lookups, and devices using this
-# machine as a Tailscale exit node inherit its resolver (Tailscale runs a DNS
-# server on the exit node for its peers), so this is what filters ads for a
-# device away from home. The fallback exists because Pi-hole is a pod on this
+# Pi-hole must be first for this host's own lookups. It is not what filters ads
+# away from home any more - the tailnet global nameserver does that directly,
+# and it takes precedence over the resolvers an exit node would otherwise hand
+# its peers from this file. The fallback exists because Pi-hole is a pod on this
 # same host: without it, a k3s outage leaves the machine unable to resolve
-# anything, images included.
+# anything, images included. That fallback is unfiltered, which is one more
+# reason peers should not be inheriting this list.
 - name: Point dhcpcd at Pi-hole
   template:
     src: resolv.conf.head.j2
@@ -106,6 +107,24 @@
     - dhcpcd_owns_resolv | bool
     - not (resolved_running | bool)
   notify: regenerate resolv.conf
+  tags:
+    - configure
+    - dns
+
+- name: Stop dhcpcd accepting the router's IPv6 advertised nameservers
+  lineinfile:
+    path: /etc/dhcpcd.conf
+    regexp: '^noipv6rs$'
+    line: "noipv6rs"
+    backup: yes
+  when:
+    - resolver_primary | length > 0
+    - resolver_deny_ra_dns | bool
+    - dhcpcd_owns_resolv | bool
+    - not (resolved_running | bool)
+  # Restart, not the rebind the other dhcpcd tasks use: noipv6rs only takes
+  # effect at startup. See the handler for what a rebind leaves behind.
+  notify: restart dhcpcd
   tags:
     - configure
     - dns

@@ -21,3 +21,35 @@
       systemctl restart tailscaled
     fi
   changed_when: true
+
+# Separate from the rebind above, and deliberately a restart.
+#
+# noipv6rs is read at startup. A rebind re-reads the leases, not that option, so
+# adding it to dhcpcd.conf and notifying `regenerate resolv.conf` produced a
+# correct resolv.conf that lasted until the next Router Advertisement and then
+# silently regained the router's nameserver. The daemon on ds10u had been up
+# since June, still ran as `dhcpcd: enp1s0 [ip4] [ip6]`, and still held RA state
+# (nd1_from=fe80::...) throughout.
+#
+# There may be no dhcpcd unit to restart. On ds10u dhcpcd is not supervised
+# directly at all - it is started by ifupdown, and its cgroup is
+# system.slice/ifup@enp1s0.service - so `systemctl restart dhcpcd` fails with
+# "Could not find the requested service". Falling back to the ifup unit means
+# taking the interface down and up.
+#
+# That is genuinely disruptive on this host: enp1s0 is the only real interface,
+# so the bounce interrupts k3s, LAN DNS for the whole house, and any Ansible run
+# connected over it or over Tailscale. It is why this handler is notified only
+# by the noipv6rs task and nothing else.
+#
+# Not needed to make the setting stick across a reboot - noipv6rs lives in
+# dhcpcd.conf and is read at every start. This handler only closes the gap
+# between changing the file and the next boot, so skipping it costs a stale RA
+# nameserver in third position until then, not the fix itself.
+- name: restart dhcpcd
+  ansible.builtin.systemd:
+    name: >-
+      {{ 'dhcpcd.service' if 'dhcpcd.service' in ansible_facts.services
+         else ('dhcpcd5.service' if 'dhcpcd5.service' in ansible_facts.services
+               else 'ifup@' ~ ansible_facts.default_ipv4.interface ~ '.service') }}
+    state: restarted

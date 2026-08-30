@@ -29,3 +29,16 @@ argument_specs:
         type: bool
         default: true
         description: Offer this node as an exit node, subject to admin approval.
+      tailscale_accept_dns:
+        type: bool
+        default: true
+        description:
+          - Whether this node takes its resolver from the tailnet. True matches
+            Tailscale's own default and is right for an ordinary client.
+          - Must be false on the node that hosts the resolver the tailnet points
+            at. With "Override local DNS" enabled, tailscaled rewrites
+            /etc/resolv.conf to 100.100.100.100 on every member - which on that
+            node means resolving only through a pod running on itself, with no
+            fallback, so a Pi-hole outage becomes unrecoverable without manual
+            intervention. It also wrests resolv.conf from dhcpcd, silently
+            disabling every task in roles/resolver.

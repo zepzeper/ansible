@@ -1,8 +1,8 @@
 # Managed by Ansible (roles/server). Edits on the host will be overwritten.
 #
-# Devices using this machine as a Tailscale exit node inherit this resolver -
-# Tailscale runs a DNS server on the exit node for its peers - so this is what
-# makes Pi-hole filter traffic for a device that is away from home.
+# This is the resolver for the host itself. It is no longer what filters ads
+# for a device away from home - the tailnet's global nameserver does that, and
+# it overrides whatever the exit node would otherwise inherit from here.
 #
 # Pi-hole runs as a pod on this same host, so resolution depends on k3s being
 # up. FallbackDNS keeps the machine able to resolve if that ever breaks, at the

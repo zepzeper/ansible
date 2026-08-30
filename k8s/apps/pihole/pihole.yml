@@ -128,6 +128,35 @@ spec:
   # answer a source address outside the pod subnet. Do not set one without the
   # other.
   externalTrafficPolicy: Local
+  # MetalLB announces 192.168.1.2 by ARP, so it answers only on the LAN. A
+  # tailnet client away from home reaches it solely through the
+  # 192.168.1.0/24 subnet route, which every client has to accept first -
+  # iOS and Android do so automatically, Linux peers need --accept-routes,
+  # and a Linux peer physically on this LAN cannot safely turn that on (see
+  # roles/tailscale/meta/argument_specs.yml). Serving :53 on the node's
+  # Tailscale address as well removes the dependency: it is reachable from
+  # anywhere on the tailnet with no route to accept, so it is what the
+  # Tailscale global nameserver points at.
+  #
+  # Same mechanism as the ingress controller - see the externalIPs patch in
+  # roles/k8s-base/tasks/main.yml. Hardcoded to match the loadBalancerIPs
+  # annotation above; this manifest is applied by kustomize, not templated.
+  #
+  # Known cost, measured on 2026-08-30: externalTrafficPolicy: Local above does
+  # NOT extend to externalIPs on this kube-proxy. Traffic to the LAN VIP keeps
+  # its source address, traffic to the Tailscale address is masqueraded to the
+  # cni0 bridge. Two queries sent within the same second:
+  #
+  #   dig @192.168.1.2     -> logged as client 192.168.1.200
+  #   dig @100.117.255.24  -> logged as client 10.42.0.1
+  #
+  # So every device away from home is attributed to 10.42.0.1 in the dashboard,
+  # and per-client blocking cannot target one. Filtering itself is unaffected.
+  # The alternative - pointing the global nameserver at 192.168.1.2 instead -
+  # keeps real client addresses but makes remote DNS depend on each client
+  # accepting the subnet route, which Linux peers on this LAN cannot safely do.
+  externalIPs:
+    - 100.117.255.24
   selector:
     app: pihole
   ports:

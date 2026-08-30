@@ -49,15 +49,35 @@ ingress_tailscale_address: "100.117.255.24"
 # k8s/infrastructure/metallb/ippool.yml.
 ingress_lan_address: "192.168.1.3"
 
-# Advertising ds10u as an exit node is what gives ad-blocking away from home.
-# Tailscale's custom global nameserver is gated on the free plan, so tailnet
-# clients cannot simply be pointed at Pi-hole; routing a device's traffic
-# through this node instead sends its DNS to Pi-hole along with everything else.
-# Exit nodes and subnet routers are both free-tier features.
+# Ad-blocking away from home does NOT depend on this. It used to, on the
+# premise recorded here that "Tailscale's custom global nameserver is gated on
+# the free plan" - that premise was wrong. Custom global nameservers are
+# available on the Personal plan, and believing otherwise cost the tailnet its
+# ad filtering entirely: the DNS page was left empty, so a device away from home
+# received no resolver from the coordination server and quietly kept using the
+# café or carrier one. Pi-hole's query log ran seven days without a single
+# 100.64.0.0/10 client.
+#
+# The DNS page now publishes ds10u as a global nameserver with Override local
+# DNS on, which is what filters ads off the LAN. The exit node stays advertised
+# because it is still worth having, but it is no longer load-bearing for DNS.
+#
+# That global nameserver is the node's Tailscale address, not 192.168.1.2:
+# the LAN VIP is only reachable through the 192.168.1.0/24 subnet route, and a
+# Linux peer physically on this LAN cannot safely accept that route (see
+# roles/tailscale/meta/argument_specs.yml). The externalIPs entry on the Pi-hole
+# Service in k8s/apps/pihole/pihole.yml is what makes :53 answer there.
 tailscale_advertise_exit_node: true
 
-# Pi-hole primary. Exit-node clients inherit this resolver, so it is what blocks
-# ads on a device that is away from home.
+# ds10u must not take DNS from the tailnet: it is the node the tailnet's own
+# nameserver resolves to. Left at Tailscale's default of true, "Override local
+# DNS" points this host at 100.100.100.100 -> Pi-hole -> a pod on this same
+# host, and drops resolver_fallback in the process. That is the deadlock
+# described under resolver_primary below, reintroduced from the admin console
+# rather than from this repo.
+tailscale_accept_dns: false
+
+# Pi-hole primary, for this host's own lookups.
 #
 # The fallback must be a resolver that actually answers. 192.168.1.254 was tried
 # first and does not run DNS at all - it only relays DHCP - so the fallback was
@@ -70,3 +90,10 @@ resolver_primary: "192.168.1.2"
 resolver_fallback: "1.1.1.1"
 
 resolver_exclusive: true
+
+# The router advertises its own nameserver over IPv6 RDNSS, which resolver_
+# exclusive does not suppress - it only covers the DHCPv4 option. Without this,
+# resolv.conf here carried a third, unfiltered nameserver (fd36:7e6:76f0::1)
+# that nothing in this repo put there. ds10u has no IPv6 default route, so
+# refusing RAs costs it only a ULA address that routes nowhere.
+resolver_deny_ra_dns: true
