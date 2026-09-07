@@ -43,6 +43,15 @@ forgejo_branch_protection: []
 
 forgejo_api_url: https://forgejo.krugten.org
 
+# Remove protection rules that exist on a declared repository but are no longer
+# listed above, so dropping a line here actually drops the rule.
+#
+# Scoped to repositories that appear in forgejo_branch_protection and no
+# others. Turn it off if you keep rules that are managed by hand on those same
+# repositories - the play will then name them on each run rather than remove
+# them.
+forgejo_branch_protection_prune: true
+
 # The user the API token is minted for. Needs admin on the repositories the
 # rules cover.
 forgejo_admin_user: zepzeper

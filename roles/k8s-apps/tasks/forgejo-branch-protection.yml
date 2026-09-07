@@ -156,6 +156,74 @@
   changed_when: false
   no_log: true
 
+###############################################################################
+# Reconciliation
+###############################################################################
+# Rules that exist on a declared repository but are no longer in inventory get
+# removed, so this file is the whole truth about those repositories rather than
+# only the parts of it somebody remembered to add.
+#
+# The boundary is deliberate and narrow: a repository has to appear in
+# forgejo_branch_protection before anything here will delete from it. A
+# repository nobody has declared is left completely alone, rules and all -
+# otherwise adding one repository to inventory would quietly strip protection
+# from every other repository on the instance.
+
+- name: All protection rules on the declared repositories
+  ansible.builtin.uri:
+    url: "{{ forgejo_api_url }}/api/v1/repos/{{ item }}/branch_protections"
+    method: GET
+    headers:
+      Authorization: "token {{ forgejo_api_token }}"
+  loop: "{{ forgejo_branch_protection | map(attribute='repo') | unique | list }}"
+  loop_control:
+    label: "{{ item }}"
+  register: forgejo_repo_rules
+  check_mode: false
+  no_log: true
+
+- name: Rules no longer declared
+  ansible.builtin.set_fact:
+    forgejo_stale_rules: >-
+      {%- set out = [] -%}
+      {%- for result in forgejo_repo_rules.results -%}
+      {%-   set declared = forgejo_branch_protection
+                           | selectattr('repo', 'equalto', result.item)
+                           | map(attribute='rule') | list -%}
+      {%-   for rule in result.json -%}
+      {%-     if rule.rule_name not in declared -%}
+      {%-       set _ = out.append({'repo': result.item, 'rule': rule.rule_name}) -%}
+      {%-     endif -%}
+      {%-   endfor -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Remove rules no longer declared
+  ansible.builtin.uri:
+    url: "{{ forgejo_api_url }}/api/v1/repos/{{ item.repo }}/branch_protections/{{ item.rule | urlencode }}"
+    method: DELETE
+    headers:
+      Authorization: "token {{ forgejo_api_token }}"
+    status_code: [204]
+  loop: "{{ forgejo_stale_rules if forgejo_branch_protection_prune | bool else [] }}"
+  loop_control:
+    # Named, not censored. A deletion is the one thing here worth being able to
+    # read back out of a play's output afterwards.
+    label: "{{ item.repo }} {{ item.rule }}"
+
+- name: Rules left in place that inventory does not declare
+  # Only reachable with pruning off. Saying nothing would leave protection on a
+  # branch that the repository's own configuration no longer mentions, which is
+  # how the two drift apart without anybody noticing.
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.repo }} [{{ item.rule }}] is protected on the server but not in
+      forgejo_branch_protection. Pruning is off, so it stays.
+  loop: "{{ forgejo_stale_rules }}"
+  loop_control:
+    label: "{{ item.repo }} {{ item.rule }}"
+  when: not forgejo_branch_protection_prune | bool
+
 - name: Protected branches now in force
   ansible.builtin.debug:
     msg: >-
