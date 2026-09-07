@@ -35,8 +35,16 @@ spec:
               value: "1000"
             - name: GITEA__server__DOMAIN
               value: forgejo.krugten.org
+            # The MetalLB address of the forgejo-ssh Service, not the name in
+            # ROOT_URL. That name resolves to the ingress controller (.3),
+            # which speaks HTTP and nothing else - so the clone URLs Forgejo
+            # printed for ssh pointed at a port that times out.
+            #
+            # An IP here rather than a name because this instance is on its way
+            # out: the migration to kodai-infra puts Forgejo on one host that
+            # answers both, and the split disappears with it.
             - name: GITEA__server__SSH_DOMAIN
-              value: forgejo.krugten.org
+              value: 192.168.1.4
             - name: GITEA__server__ROOT_URL
               value: https://forgejo.krugten.org
             - name: GITEA__server__SSH_PORT
