@@ -26,3 +26,61 @@ k8s_app_deployments:
   - {namespace: paperless, deploy: paperless}
   - {namespace: paperless, deploy: redis}
   - {namespace: paperless, deploy: postgres}
+  - {namespace: forgejo, deploy: forgejo}
+  - {namespace: forgejo, deploy: forgejo-runner}
+
+###############################################################################
+# Forgejo branch protection
+###############################################################################
+# Applied through the API after the apps are up, because it is per repository
+# and app.ini cannot express it. Without a rule here, the merge style set in
+# k8s/apps/forgejo/forgejo.yml is advisory: nothing stops a direct push to the
+# branch a pull request was going to land on.
+#
+# Empty by default. Each entry is {repo: "owner/name", rule: "<branch or
+# glob>"} plus any override from forgejo_branch_protection_defaults below.
+forgejo_branch_protection: []
+
+forgejo_api_url: https://forgejo.krugten.org
+
+# The user the API token is minted for. Needs admin on the repositories the
+# rules cover.
+forgejo_admin_user: zepzeper
+
+forgejo_branch_protection_defaults:
+  # The whole point: the branch cannot be pushed to directly, so a change
+  # reaches it through a pull request or not at all.
+  enable_push: false
+
+  # Zero, and this is not laziness on a one-person forge - it is the only
+  # value that works. Forgejo will not let you approve your own pull request,
+  # so `required_approvals: 1` on an instance with one human means nothing can
+  # ever merge, and the error at the bottom of the PR page does not say why.
+  # Raise it the day there is somebody else to do the approving.
+  required_approvals: 0
+
+  # The branch has to be current with its target before it can merge. This is
+  # what makes the rebase merge style honest: without it, a pull request can be
+  # merged having been tested against a base from last week.
+  block_on_outdated_branch: true
+
+  # A rejected review blocks the merge until it is resolved.
+  block_on_rejected_reviews: true
+
+  # Off, deliberately. With apply_to_admins on, a rule that turns out to be
+  # wrong locks out the only account that could fix it - and on this instance
+  # that is the same person who would be trying to. The rule exists to stop an
+  # accidental push, not to bind you; turn it on when there is somebody else
+  # with admin.
+  apply_to_admins: false
+
+  # Requires named CI checks to pass. Off by default because the context names
+  # have to match exactly what Forgejo Actions reports, and a context that
+  # never reports blocks every merge on that branch forever with no indication
+  # that the name is the problem. Set status_check_contexts and turn this on
+  # only after seeing the names on a real pull request.
+  enable_status_check: false
+  status_check_contexts: []
+
+  require_signed_commits: false
+  dismiss_stale_approvals: false

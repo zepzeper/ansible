@@ -1,0 +1,171 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: forgejo
+  template:
+    metadata:
+      labels:
+        app: forgejo
+    spec:
+      containers:
+        - name: forgejo
+          image: codeberg.org/forgejo/forgejo:11.0.2
+          ports:
+            - containerPort: 3000
+            - containerPort: 22
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          env:
+            # env-to-ini: these become app.ini settings on boot, so the
+            # instance comes up with sane URLs instead of relying on the
+            # install wizard guessing them from the request Host.
+            - name: USER_UID
+              value: "1000"
+            - name: USER_GID
+              value: "1000"
+            - name: GITEA__server__DOMAIN
+              value: forgejo.krugten.org
+            - name: GITEA__server__SSH_DOMAIN
+              value: forgejo.krugten.org
+            - name: GITEA__server__ROOT_URL
+              value: https://forgejo.krugten.org
+            - name: GITEA__server__SSH_PORT
+              value: "22"
+
+            # Self-registration off. This instance answers on a public name
+            # with a real certificate, and it shipped with sign-up open -
+            # /user/sign_up returned 200 to anybody on the internet. Nothing
+            # was exposed by it, because every repository here is private, but
+            # an open sign-up form on a forge is an account away from being a
+            # problem.
+            - name: GITEA__service__DISABLE_REGISTRATION
+              value: "true"
+
+            # New repositories are private unless you say otherwise. The
+            # default is `last`, which repeats whatever you picked the previous
+            # time - fine until the one time it remembers "public".
+            - name: GITEA__repository__DEFAULT_PRIVATE
+              value: private
+
+            # master, not Forgejo's default of `main`. Every repository here
+            # already uses master, and a new one defaulting to main means the
+            # first push goes to a branch nothing else refers to.
+            - name: GITEA__repository__DEFAULT_BRANCH
+              value: master
+
+            # Pull requests.
+            #
+            # The section is [repository.pull-request], and environment
+            # variables cannot carry a dot or a hyphen - env-to-ini decodes
+            # _0X2E_ as "." and _0X2D_ as "-". Spell either one wrong and the
+            # variable is silently ignored: no error, no warning, and the
+            # setting simply stays at its default.
+            #
+            # rebase: the branch's commits are replayed onto the target and no
+            # merge commit is made, so `git log` reads as a straight sequence
+            # of changes and bisect has no merges to step around. It keeps
+            # every individual commit, which squash would collapse into one -
+            # and the commit messages here carry the reasoning, so collapsing
+            # them throws away the part worth keeping.
+            #
+            # The tradeoff: git alone no longer records which commits belonged
+            # to which pull request. Forgejo still does, in the PR itself. If
+            # that boundary matters in git too, `rebase-merge` is the one-word
+            # change - at the cost of a merge commit per PR, most of which are
+            # one or two commits long.
+            - name: GITEA__repository_0X2E_pull_0X2D_request__DEFAULT_MERGE_STYLE
+              value: rebase
+
+            # And "Update branch" rebases rather than merging the target back
+            # in. Matching the merge style keeps a branch linear from the
+            # moment it is opened; the default of `merge` would put a merge
+            # commit into the branch that the rebase above then has to replay.
+            - name: GITEA__repository_0X2E_pull_0X2D_request__DEFAULT_UPDATE_STYLE
+              value: rebase
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              # Memory only, deliberately. Same rationale as vaultwarden: a
+              # CPU limit throttles even when idle, a missing memory limit
+              # risks node-level OOM.
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            periodSeconds: 15
+            failureThreshold: 3
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/forgejo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  selector:
+    app: forgejo
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+---
+# Git-over-SSH cannot ride the nginx Ingress (TCP only), so it gets its own
+# MetalLB VIP. Pinned outside the DHCP-leased range, next to pihole (.2) and
+# ingress-nginx (.3).
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgejo-ssh
+  namespace: forgejo
+  annotations:
+    metallb.io/address-pool: lan-pool
+spec:
+  type: LoadBalancer
+  selector:
+    app: forgejo
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: 22
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: forgejo
+  namespace: forgejo
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    external-dns.alpha.kubernetes.io/hostname: forgejo.krugten.org
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - forgejo.krugten.org
+      secretName: forgejo-tls
+  rules:
+    - host: forgejo.krugten.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: forgejo
+                port:
+                  number: 80

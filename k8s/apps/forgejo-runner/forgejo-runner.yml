@@ -1,0 +1,156 @@
+---
+# Forgejo Actions runner. Executes jobs in docker-in-docker: the runner has no
+# k8s exec backend, so a privileged dind sidecar plays the Docker daemon role
+# and job containers are children of the dind container, not pods.
+#
+# Runner v13 speaks a new connection-declaring protocol that Forgejo v11 does
+# not implement ("unregistered runner" from the Declare call), so the runner is
+# pinned to the matching server major and registers the classic way in the init
+# container. Revisit when the Forgejo server is upgraded past v11.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: forgejo-runner-config
+  namespace: forgejo
+data:
+  config.yml: |
+    runner:
+      # Registration material written by the register init container.
+      file: /data/.runner
+      envs:
+        # Injected into every job container: lets workflow steps reach the
+        # dind daemon (docker builds in the image phase). The hostname is
+        # resolved by the container.options --add-host below; host-gateway is
+        # the dind container seen from the job's network.
+        DOCKER_HOST: tcp://dind.docker.internal:2375
+      # Jobs the runner claims in parallel. Each job is its own container(s)
+      # inside dind, so this is the concurrency knob that matters on a single
+      # node - more runner pods would not add compute.
+      capacity: 3
+      labels:
+        # GitHub-flavoured names: `runs-on: ubuntu-latest` works out of the
+        # box. catthehacker's image mirrors GitHub runner tooling (node,
+        # python, ...), which plain node images lack.
+        - ubuntu-latest:docker://ghcr.io/catthehacker/ubuntu:act-24.04
+        # Prebaked PHP job image (built from ci-image/Dockerfile in this
+        # repo): PHP 8.5 + extensions + composer + node, so CI phases skip
+        # the per-run setup-php tax. Rebuild into dind when PHP bumps.
+        - php:docker://kodai-ci:php8.5
+    cache:
+      enabled: true
+      # The actions/cache server listens in the runner container. Job containers
+      # sit behind dind's bridge, whose gateway address (172.17.0.1) is the dind
+      # container itself - same network namespace as this pod. The default of
+      # advertising the pod IP is not routable from inside dind.
+      host: 172.17.0.1
+      port: 8088
+    container:
+      # Resolves dind.docker.internal (see runner.envs above) to the gateway
+      # the job uses to reach the dind container.
+      options: '--add-host=dind.docker.internal:host-gateway'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgejo-runner
+  namespace: forgejo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: forgejo-runner
+  template:
+    metadata:
+      labels:
+        app: forgejo-runner
+    spec:
+      # Register once against the in-cluster Forgejo service. The token is
+      # minted server-side by the k8s-apps role (forgejo-runner-registration
+      # Secret); the .runner file it writes persists in the hostPath below, so
+      # this is a no-op on every restart.
+      initContainers:
+        - name: register
+          image: data.forgejo.org/forgejo/runner:11
+          command: ["sh", "-c"]
+          args:
+            - |
+              if [ ! -f /data/.runner ]; then
+                forgejo-runner register \
+                  --no-interactive \
+                  --config /config/config.yml \
+                  --instance http://forgejo.forgejo.svc.cluster.local:80 \
+                  --token "$TOKEN" \
+                  --name ds10u
+              fi
+          env:
+            - name: TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-runner-registration
+                  key: token
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+      containers:
+        - name: runner
+          image: data.forgejo.org/forgejo/runner:11
+          command: ["forgejo-runner"]
+          args: ["daemon", "--config", "/config/config.yml"]
+          env:
+            - name: DOCKER_HOST
+              value: tcp://localhost:2375
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 50m
+            limits:
+              # Was 256Mi and got OOMKilled with three jobs streaming logs at
+              # once (exit 137, orphaning the tasks as "running"). The daemon
+              # buffers job output in memory, so the limit has to scale with
+              # runner.capacity.
+              memory: 512Mi
+          readinessProbe:
+            # No health endpoint; the cache server only listens while the
+            # daemon is up, so a TCP connect is the cheapest liveness signal.
+            tcpSocket:
+              port: 8088
+            periodSeconds: 15
+            failureThreshold: 3
+        - name: dind
+          image: docker.io/library/docker:28-dind
+          # Needs privileged to run containers; the image cache persists in the
+          # hostPath below so jobs do not re-pull on every pod restart.
+          securityContext:
+            privileged: true
+          args: ["dockerd", "--host=tcp://0.0.0.0:2375", "--tls=false"]
+          volumeMounts:
+            - name: docker-lib
+              mountPath: /var/lib/docker
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 100m
+            limits:
+              # Three concurrent jobs can mean two MariaDB servers, two Redis
+              # instances, a Pest run and a PHPStan at --memory-limit=1G inside
+              # dind at the same time. 2Gi was not enough for that.
+              memory: 4Gi
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/forgejo-runner
+        - name: docker-lib
+          hostPath:
+            path: /var/lib/forgejo-runner-docker
+        - name: config
+          configMap:
+            name: forgejo-runner-config

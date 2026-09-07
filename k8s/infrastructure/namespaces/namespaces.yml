@@ -7,6 +7,11 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: forgejo
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: home-assistant
 ---
 apiVersion: v1

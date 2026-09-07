@@ -1,0 +1,168 @@
+---
+###############################################################################
+# Forgejo branch protection
+###############################################################################
+# Branch protection is per repository, so app.ini cannot express it and the
+# manifests cannot either. Without it the merge style configured on the server
+# is only advice: nothing stops a push straight to master, and the pull request
+# workflow is a convention rather than a rule.
+#
+# Runs after the apps are applied, because it talks to a Forgejo that has to be
+# answering already.
+
+- name: Read the Forgejo admin API token secret
+  kubernetes.core.k8s_info:
+    kind: Secret
+    namespace: forgejo
+    name: forgejo-admin-token
+  register: forgejo_token_secret
+
+# Minted once and kept, like the runner registration token next door. A fresh
+# token on every run would leave a growing list of them in the user's settings,
+# each one still valid.
+- name: Mint an admin API token
+  when: forgejo_token_secret.resources | length == 0
+  block:
+    - name: Find the running Forgejo pod
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: forgejo
+        label_selectors:
+          - app=forgejo
+        field_selectors:
+          - status.phase=Running
+      register: forgejo_api_pods
+
+    - name: Generate the admin API token
+      # write:repository is what the branch_protections endpoints need, and it
+      # is all they need - this token cannot read code or touch users.
+      #
+      # Flag names moved between versions: --token-name/--scopes on this one
+      # (11.x, Gitea 1.22 lineage), --access-token-name/--access-token-scopes
+      # on newer ones. If this fails with "flag provided but not defined", that
+      # is which rename you are looking at.
+      kubernetes.core.k8s_exec:
+        namespace: forgejo
+        pod: "{{ forgejo_api_pods.resources[0].metadata.name }}"
+        command: >-
+          su git -c "forgejo admin user generate-access-token
+          --username {{ forgejo_admin_user }}
+          --token-name ansible-branch-protection
+          --scopes write:repository"
+      register: forgejo_token_exec
+      no_log: true
+
+    - name: Store the admin API token as a Secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: forgejo-admin-token
+            namespace: forgejo
+          stringData:
+            # The CLI prints "Access token was successfully created: <token>",
+            # so the token is the last whitespace-separated field rather than
+            # the whole line.
+            token: "{{ forgejo_token_exec.stdout | trim | split(' ') | last }}"
+      no_log: true
+
+# Read again, unconditionally, into a name of its own.
+#
+# The obvious shape - re-registering forgejo_token_secret inside the block
+# above - is wrong in a way that only shows on the second run. A skipped task
+# still sets its registered variable, to {"skipped": true, ...}, so on every
+# run after the first the block is skipped and clobbers the good value read at
+# the top with a dict that has no `resources` at all.
+- name: Read the token back
+  kubernetes.core.k8s_info:
+    kind: Secret
+    namespace: forgejo
+    name: forgejo-admin-token
+  register: forgejo_token_current
+
+- name: The token exists
+  ansible.builtin.assert:
+    that:
+      - forgejo_token_current.resources | length > 0
+    fail_msg: >-
+      forgejo-admin-token was neither found nor created. Check the
+      generate-access-token task above - the CLI flags differ between Forgejo
+      versions.
+    quiet: true
+
+- name: Decode the admin API token
+  ansible.builtin.set_fact:
+    forgejo_api_token: "{{ forgejo_token_current.resources[0].data.token | b64decode }}"
+  no_log: true
+
+- name: Which protection rules already exist
+  # 404 is a normal answer here - it means the rule has not been created yet -
+  # so it is accepted rather than treated as a failure.
+  ansible.builtin.uri:
+    url: "{{ forgejo_api_url }}/api/v1/repos/{{ item.repo }}/branch_protections/{{ item.rule | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "token {{ forgejo_api_token }}"
+    status_code: [200, 404]
+  loop: "{{ forgejo_branch_protection }}"
+  loop_control:
+    label: "{{ item.repo }} {{ item.rule }}"
+  register: forgejo_existing_rules
+  check_mode: false
+  no_log: true
+
+- name: Create missing protection rules
+  ansible.builtin.uri:
+    url: "{{ forgejo_api_url }}/api/v1/repos/{{ item.item.repo }}/branch_protections"
+    method: POST
+    headers:
+      Authorization: "token {{ forgejo_api_token }}"
+    body_format: json
+    # rule_name rather than branch_name: branch_name is the older field and
+    # matches one literal branch, while rule_name is the one that accepts a
+    # glob. Sending both makes Forgejo reject the request.
+    body: "{{ forgejo_branch_protection_defaults
+              | combine(item.item | dict2items | rejectattr('key', 'in', ['repo', 'rule']) | items2dict)
+              | combine({'rule_name': item.item.rule}) }}"
+    status_code: [201]
+  loop: "{{ forgejo_existing_rules.results }}"
+  loop_control:
+    label: "{{ item.item.repo }} {{ item.item.rule }}"
+  when: item.status == 404
+  no_log: true
+
+- name: Update existing protection rules
+  ansible.builtin.uri:
+    url: "{{ forgejo_api_url }}/api/v1/repos/{{ item.item.repo }}/branch_protections/{{ item.item.rule | urlencode }}"
+    method: PATCH
+    headers:
+      Authorization: "token {{ forgejo_api_token }}"
+    body_format: json
+    # No rule_name on a PATCH - the rule is named by the URL, and sending it in
+    # the body as well is how you rename a rule by accident.
+    body: "{{ forgejo_branch_protection_defaults
+              | combine(item.item | dict2items | rejectattr('key', 'in', ['repo', 'rule']) | items2dict) }}"
+    status_code: [200]
+  loop: "{{ forgejo_existing_rules.results }}"
+  loop_control:
+    label: "{{ item.item.repo }} {{ item.item.rule }}"
+  when: item.status == 200
+  # A PATCH that sets the same values Forgejo already has is not a change, but
+  # uri cannot know that. Reporting changed on every run would make `changed`
+  # meaningless on this play, so it is reported off and the rules are read back
+  # below instead.
+  changed_when: false
+  no_log: true
+
+- name: Protected branches now in force
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.item.repo }} {{ item.item.rule }}:
+      direct push {{ 'blocked' if not (forgejo_branch_protection_defaults | combine(item.item)).enable_push else 'ALLOWED' }},
+      approvals {{ (forgejo_branch_protection_defaults | combine(item.item)).required_approvals }},
+      status checks {{ 'on' if (forgejo_branch_protection_defaults | combine(item.item)).enable_status_check else 'off' }}
+  loop: "{{ forgejo_existing_rules.results }}"
+  loop_control:
+    label: "{{ item.item.repo }}"

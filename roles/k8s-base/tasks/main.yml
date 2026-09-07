@@ -59,6 +59,23 @@
     - deploy
     - cluster
 
+# The runner image runs as uid 1000 and needs write access to its registration
+# file and cache, so these two dirs get explicit ownership - the loop above
+# deliberately stays a flat list of root-owned dirs.
+- name: Create the Actions runner data directories
+  file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "0755"
+  loop:
+    - {path: /var/lib/forgejo-runner, owner: "1000", group: "1000"}
+    - {path: /var/lib/forgejo-runner-docker, owner: root, group: root}
+  tags:
+    - deploy
+    - cluster
+
 # Namespaces first: the upstream installs below and the secrets after them all
 # land in namespaces this creates.
 - name: Apply namespaces

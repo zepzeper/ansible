@@ -101,6 +101,93 @@
     - apps
     - manifests
 
+###############################################################################
+# Forgejo Actions runner
+#
+# The runner's init container registers against Forgejo using a token in the
+# forgejo-runner-registration Secret. The token is minted by the Forgejo CLI
+# inside the server pod, so nothing lands in git - but it can only be minted
+# once Forgejo is running, which is why this sits after the apply above.
+###############################################################################
+
+- name: Read the Actions runner registration token secret
+  kubernetes.core.k8s_info:
+    kind: Secret
+    namespace: forgejo
+    name: forgejo-runner-registration
+  register: runner_token_secret
+  tags:
+    - deploy
+    - actions
+
+# Only minted once: regenerating on every run would change the Secret, restart
+# the runner pod, and leave a stale registration in Forgejo's admin panel.
+- name: Mint an Actions runner registration token
+  when: runner_token_secret.resources | length == 0
+  block:
+    - name: Find the running Forgejo pod
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: forgejo
+        label_selectors:
+          - app=forgejo
+        field_selectors:
+          - status.phase=Running
+      register: forgejo_pods
+      tags:
+        - deploy
+        - actions
+
+    - name: Generate the runner registration token
+      kubernetes.core.k8s_exec:
+        namespace: forgejo
+        pod: "{{ forgejo_pods.resources[0].metadata.name }}"
+        command: su git -c "forgejo actions generate-runner-token"
+      register: runner_token_exec
+      no_log: true
+      tags:
+        - deploy
+        - actions
+
+    - name: Store the runner registration token as a Secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: forgejo-runner-registration
+            namespace: forgejo
+          stringData:
+            token: "{{ runner_token_exec.stdout | trim }}"
+      no_log: true
+      tags:
+        - deploy
+        - actions
+
+###############################################################################
+# Forgejo branch protection
+###############################################################################
+# After the runner, because both talk to a Forgejo that has to be up, and
+# skipped entirely when no rules are declared - so a cluster that has not
+# decided which branches to protect does not mint an API token for nothing.
+
+- name: Configure Forgejo branch protection
+  # `apply` is not optional here. Tags on a dynamic include attach to the
+  # include statement, not to what it pulls in - so `--tags forgejo` matches
+  # this task, runs it, and then filters out every task inside the file. The
+  # play reports ok and changes nothing, which is the worst way to be wrong.
+  ansible.builtin.include_tasks:
+    file: forgejo-branch-protection.yml
+    apply:
+      tags:
+        - deploy
+        - forgejo
+  when: forgejo_branch_protection | length > 0
+  tags:
+    - deploy
+    - forgejo
+
 - name: Wait for application deployments to be ready
   kubernetes.core.k8s_info:
     kind: Deployment

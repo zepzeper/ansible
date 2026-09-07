@@ -13,3 +13,18 @@ extra_locales:
 # Backups. The repository password lives in the vault; keep a copy elsewhere
 # too, because losing it makes every existing snapshot unreadable.
 restic_password: "{{ vault_restic_password }}"
+
+###############################################################################
+# Forgejo branch protection
+###############################################################################
+# Which branches cannot be pushed to directly. Everything else about a rule
+# comes from forgejo_branch_protection_defaults in roles/k8s-apps/defaults -
+# these entries only say where it applies.
+#
+# staging is protected too: it is what the staging environment deploys from, so
+# a direct push to it puts code on a running box without a pull request having
+# existed.
+forgejo_branch_protection:
+  - {repo: zepzeper/Kodai, rule: master}
+  - {repo: zepzeper/Kodai, rule: staging}
+  - {repo: zepzeper/Kodai-infra, rule: master}
