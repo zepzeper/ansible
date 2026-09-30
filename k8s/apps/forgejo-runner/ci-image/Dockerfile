@@ -31,6 +31,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
       php8.5-cli php8.5-mysql php8.5-intl php8.5-zip php8.5-gd \
       php8.5-redis php8.5-mbstring php8.5-xml php8.5-curl \
+      php8.5-mailparse \
   && ln -sf /usr/bin/php8.5 /usr/bin/php \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
